@@ -210,3 +210,134 @@ class TestAutoLoggingSentimentModel:
             assert "confidence_label" in predictions.columns
             assert "positive_probability" in predictions.columns
             assert "negative_probability" in predictions.columns
+
+    def test_auto_logging_model_isolated_environment(self, mlflow_server, sample_data, temp_workspace, isolated_env):
+        """Test that auto-logged models work in completely isolated environments."""
+        texts, labels = sample_data
+
+        # Train and auto-log model
+        model = AutoLoggingSentimentModel(
+            experiment_name="test_isolated_environment",
+            dry_run=False,  # Actually save the model
+        )
+
+        model.train(texts, labels)
+        run_id = model.run_id
+
+        # Test loading in isolated environment (no access to repo code)
+        with isolated_env(temp_workspace):
+            model_uri = f"runs:/{run_id}/auto_sentiment_model"
+            loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+            # Test predictions in isolated environment
+            test_data = ["Great product!", "Terrible service"]
+            predictions = loaded_model.predict(test_data)
+
+            assert len(predictions) == 2
+            assert "prediction" in predictions.columns
+            assert "confidence_label" in predictions.columns
+
+    def test_auto_logging_model_independence_from_repo_changes(
+        self, mlflow_server, sample_data, temp_workspace, isolated_env
+    ):
+        """Test that auto-logged models are independent of repo code changes."""
+        texts, labels = sample_data
+
+        # Train and save model
+        model = AutoLoggingSentimentModel(experiment_name="test_independence", dry_run=False)
+
+        model.train(texts, labels)
+        run_id = model.run_id
+
+        # Get baseline prediction from current model
+        baseline_prediction = model.predict(None, ["Test text for consistency"])
+        baseline_result = baseline_prediction.iloc[0]["prediction"]
+
+        # Load model in isolated environment (simulating different deployment)
+        with isolated_env(temp_workspace):
+            model_uri = f"runs:/{run_id}/auto_sentiment_model"
+            loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+            # Test same input in isolated environment
+            isolated_prediction = loaded_model.predict(["Test text for consistency"])
+            isolated_result = isolated_prediction.iloc[0]["prediction"]
+
+            # Results should be identical - model is independent
+            assert (
+                baseline_result == isolated_result
+            ), f"Model behavior changed: baseline={baseline_result}, isolated={isolated_result}"
+
+    def test_auto_logging_with_complex_preprocessing_in_isolation(
+        self, mlflow_server, sample_data, temp_workspace, isolated_env
+    ):
+        """Test that complex preprocessing pipeline works in isolation."""
+        texts, labels = sample_data
+
+        # Use texts with special characters and URLs to test preprocessing
+        # Need enough samples for stratified split
+        complex_texts = [
+            "I LOVE this product!!! https://example.com/product",
+            "Terrible quality :( Would not recommend!",
+            "Amazing service & fast delivery!!",
+            "Poor customer support... Very disappointed",
+            "EXCELLENT experience!!! https://test.com",
+            "horrible service :( very disappointed",
+            "GREAT quality & fast shipping!",
+            "worst purchase ever... avoid this!",
+        ]
+        complex_labels = [1, 0, 1, 0, 1, 0, 1, 0]
+
+        # Train model with complex preprocessing
+        model = AutoLoggingSentimentModel(experiment_name="test_complex_preprocessing", dry_run=False)
+
+        model.train(complex_texts, complex_labels)
+        run_id = model.run_id
+
+        # Test complex preprocessing in isolated environment
+        with isolated_env(temp_workspace):
+            model_uri = f"runs:/{run_id}/auto_sentiment_model"
+            loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+            # Test with similar complex input
+            test_input = ["EXCELLENT product!!! https://test.com", "horrible service :("]
+            predictions = loaded_model.predict(test_input)
+
+            assert len(predictions) == 2
+            assert "prediction" in predictions.columns
+            # Verify preprocessing worked (should handle caps, URLs, special chars)
+            assert all(pred in [0, 1] for pred in predictions["prediction"])
+
+    def test_auto_logging_model_artifacts_isolation(self, mlflow_server, sample_data, temp_workspace, isolated_env):
+        """Test that all model artifacts are properly isolated and self-contained."""
+        texts, labels = sample_data
+
+        model = AutoLoggingSentimentModel(experiment_name="test_artifacts_isolation", dry_run=False)
+
+        model.train(texts, labels)
+        run_id = model.run_id
+
+        # Load in isolated environment and verify all components work
+        with isolated_env(temp_workspace):
+            model_uri = f"runs:/{run_id}/auto_sentiment_model"
+            loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+            # Test that all the complex preprocessing chain works
+            test_cases = [
+                "Simple positive text",
+                "Simple negative text",
+                "Complex text with URLs http://example.com and symbols!@#",
+                "UPPERCASE TEXT WITH EMOTIONS!!!",
+            ]
+
+            predictions = loaded_model.predict(test_cases)
+
+            # Verify complete pipeline works
+            assert len(predictions) == len(test_cases)
+            required_columns = ["prediction", "confidence_label", "positive_probability", "negative_probability"]
+            for col in required_columns:
+                assert col in predictions.columns
+
+            # Verify predictions are reasonable
+            assert all(0 <= prob <= 1 for prob in predictions["positive_probability"])
+            assert all(0 <= prob <= 1 for prob in predictions["negative_probability"])
+            assert all(pred in [0, 1] for pred in predictions["prediction"])
