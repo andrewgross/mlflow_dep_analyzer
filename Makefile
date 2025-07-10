@@ -14,7 +14,7 @@ setup:
 	uv run pre-commit install
 
 test:
-	uv run pytest -v
+	uv run pytest tests/ -v
 
 lint:
 	uv run pre-commit run --all-files
