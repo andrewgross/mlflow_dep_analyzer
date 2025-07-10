@@ -1,11 +1,9 @@
 import os
-import pickle
 import logging
 from typing import Any, Dict, List, Optional
 import mlflow
 import mlflow.pyfunc
 import pandas as pd
-from pyspark.ml.feature import StringIndexerModel
 
 
 logger = logging.getLogger(__name__)
@@ -20,35 +18,43 @@ class BaseModelV3(mlflow.pyfunc.PythonModel):
         self.metadata = {}
         
     def prepare_artifacts(self) -> Dict[str, str]:
-        """Prepare artifacts for serialization. Override in subclasses."""
+        """
+        Prepare artifacts for serialization. Override in subclasses.
+        
+        Returns:
+            Dict mapping artifact names to local file paths
+        """
         artifact_paths = {}
         
         # Save any StringIndexerModels or other Spark artifacts
         for name, artifact in self.artifacts.items():
-            if isinstance(artifact, StringIndexerModel):
+            # Check if it's a Spark StringIndexerModel
+            if hasattr(artifact, 'write') and hasattr(artifact, 'save'):
+                # Spark model - save to directory
                 artifact_path = f"{name}_indexer"
                 artifact.write().overwrite().save(artifact_path)
-                artifact_paths[name] = artifact_path
+                artifact_paths[f"{name}_indexer"] = artifact_path
             else:
-                # For other artifacts, pickle them
-                artifact_path = f"{name}.pkl"
-                with open(artifact_path, 'wb') as f:
-                    pickle.dump(artifact, f)
-                artifact_paths[name] = artifact_path
+                # For other artifacts, let MLflow handle serialization
+                # Just mark them for inclusion - MLflow will serialize appropriately
+                pass
                 
         return artifact_paths
         
     def load_context(self, context):
         """Load artifacts from MLflow context."""
+        # MLflow automatically makes artifacts available via context.artifacts
+        # Each artifact name maps to the local path where MLflow extracted it
         for name, path in context.artifacts.items():
             if name.endswith('_indexer'):
-                # Load StringIndexerModel
-                from pyspark.ml.feature import StringIndexerModel
-                self.artifacts[name.replace('_indexer', '')] = StringIndexerModel.load(path)
-            else:
-                # Load pickled artifacts
-                with open(path, 'rb') as f:
-                    self.artifacts[name] = pickle.load(f)
+                # Load StringIndexerModel from directory
+                try:
+                    from pyspark.ml.feature import StringIndexerModel
+                    original_name = name.replace('_indexer', '')
+                    self.artifacts[original_name] = StringIndexerModel.load(path)
+                except Exception as e:
+                    logger.warning(f"Failed to load StringIndexer {name}: {e}")
+            # Other artifacts are handled by subclasses if needed
                     
     def predict(self, context, model_input):
         """Base predict method. Override in subclasses."""

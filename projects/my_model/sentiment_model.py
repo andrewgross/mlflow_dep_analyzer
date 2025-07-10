@@ -33,10 +33,6 @@ class SentimentModel(BaseModelV3):
         # Train the model
         self.pipeline.fit(texts, labels)
         
-        # Store some artifacts for demonstration
-        self.artifacts['feature_names'] = self.pipeline.named_steps['tfidf'].get_feature_names_out()
-        self.artifacts['model_coefficients'] = self.pipeline.named_steps['classifier'].coef_
-        
         self.log_model_info("Training completed!")
     
     def predict(self, context, model_input):
