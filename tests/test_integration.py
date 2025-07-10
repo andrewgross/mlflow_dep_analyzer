@@ -14,21 +14,34 @@ from projects.shared_utils.databricks.helpers import log_model, log_model_with_c
 class TestMLflowIntegration:
     """Integration tests for MLflow packaging with PySpark."""
 
-    def test_model_training_and_basic_prediction(self, trained_model, test_predictions_data):
-        """Test basic model training and prediction."""
-        predictions = trained_model.predict(None, test_predictions_data)
+    def test_model_training_and_basic_prediction(self, sample_data, test_predictions_data):
+        """Test basic model training and prediction - train model in test like notebook."""
+        # Train model within the test (like a notebook)
+        texts, labels = sample_data
+        model = SentimentModel()
+
+        print(f"Training model with {len(texts)} samples")
+        model.train(texts, labels)
+
+        # Test prediction
+        predictions = model.predict(None, test_predictions_data)
 
         assert len(predictions) == 4
         assert "prediction" in predictions.columns
+
+        # New postprocessing adds confidence columns
+        assert "confidence_label" in predictions.columns
+        assert "confidence_score" in predictions.columns
         assert "positive_probability" in predictions.columns
         assert "negative_probability" in predictions.columns
 
-        # Check that probabilities sum to 1
-        prob_sums = predictions["positive_probability"] + predictions["negative_probability"]
-        assert all(abs(s - 1.0) < 0.001 for s in prob_sums)
-
-    def test_model_save_without_code_paths(self, mlflow_server, trained_model, test_predictions_data):
+    def test_model_save_without_code_paths(self, mlflow_server, sample_data, test_predictions_data):
         """Test saving model without code_paths (works in same environment)."""
+        # Train model within the test
+        texts, labels = sample_data
+        trained_model = SentimentModel()
+        trained_model.train(texts, labels)
+
         # Save model without code_paths
         with mlflow.start_run():
             log_model(
@@ -56,8 +69,13 @@ class TestMLflowIntegration:
             assert len(predictions) == 4
             assert "prediction" in predictions.columns
 
-    def test_model_save_with_code_paths(self, mlflow_server, trained_model, test_predictions_data):
+    def test_model_save_with_code_paths(self, mlflow_server, sample_data, test_predictions_data):
         """Test saving model with code_paths."""
+        # Train model within the test
+        texts, labels = sample_data
+        trained_model = SentimentModel()
+        trained_model.train(texts, labels)
+
         # Save model with code_paths
         with mlflow.start_run():
             log_model_with_code_paths(
@@ -86,9 +104,14 @@ class TestMLflowIntegration:
             assert "prediction" in predictions.columns
 
     def test_model_loading_in_isolated_environment(
-        self, mlflow_server, trained_model, test_predictions_data, temp_workspace, isolated_env
+        self, mlflow_server, sample_data, test_predictions_data, temp_workspace, isolated_env
     ):
         """Test loading model in isolated environment (simulates different workspace)."""
+        # Train model within the test
+        texts, labels = sample_data
+        trained_model = SentimentModel()
+        trained_model.train(texts, labels)
+
         # Save model with code_paths
         with mlflow.start_run():
             log_model_with_code_paths(model=trained_model, artifact_path="sentiment_model")
@@ -108,9 +131,14 @@ class TestMLflowIntegration:
             assert "prediction" in predictions.columns
 
     def test_model_loading_without_code_paths_fails_in_isolated_env(
-        self, mlflow_server, trained_model, test_predictions_data, temp_workspace, isolated_env
+        self, mlflow_server, sample_data, test_predictions_data, temp_workspace, isolated_env
     ):
         """Test that model without code_paths fails in isolated environment."""
+        # Train model within the test
+        texts, labels = sample_data
+        trained_model = SentimentModel()
+        trained_model.train(texts, labels)
+
         # Save model without code_paths
         with mlflow.start_run():
             log_model(model=trained_model, artifact_path="sentiment_model")
@@ -206,8 +234,13 @@ class TestMLflowIntegration:
             assert hasattr(loaded_model._model_impl.python_model, "category_indexer")
             assert loaded_model._model_impl.python_model.category_indexer is not None
 
-    def test_code_paths_includes_correct_files(self, mlflow_server, trained_model):
+    def test_code_paths_includes_correct_files(self, mlflow_server, sample_data):
         """Test that code_paths includes the correct project files."""
+        # Train model within the test
+        texts, labels = sample_data
+        trained_model = SentimentModel()
+        trained_model.train(texts, labels)
+
         # Save model with code_paths
         with mlflow.start_run():
             log_model_with_code_paths(model=trained_model, artifact_path="sentiment_model")

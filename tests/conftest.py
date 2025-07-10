@@ -213,20 +213,8 @@ def isolated_env():
     return isolated_environment
 
 
-@pytest.fixture
-def trained_model(sample_data):
-    """Create a trained model for testing."""
-    # Add project path to sys.path if not already there
-    project_root = os.path.join(os.path.dirname(__file__), "..")
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-
-    from projects.my_model.sentiment_model import SentimentModel
-
-    texts, labels = sample_data
-    model = SentimentModel()
-    model.train(texts, labels)
-    return model
+# Note: trained_model fixture removed - models are now trained within test methods
+# to simulate notebook-style training workflow
 
 
 @pytest.fixture
