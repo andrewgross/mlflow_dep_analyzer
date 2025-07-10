@@ -55,21 +55,29 @@ tests/
 uv sync
 ```
 
-### 2. Train and Log Models
+### 2. Run Integration Tests
 ```bash
-uv run python notebooks/train_model.py
+uv run pytest
 ```
 
-This will create two model versions:
-- One without `code_paths` (problematic)
-- One with `code_paths` (solution)
+The test suite automatically:
+- Starts an MLflow server using session fixtures
+- Creates PySpark session for Spark artifacts
+- Tests both approaches (with/without code_paths)
+- Simulates isolated environments
+- Cleans up automatically
 
-### 3. Test Model Loading
+### 3. Run Specific Tests
 ```bash
-uv run python tests/test_model_loading.py
-```
+# Test basic functionality
+uv run pytest tests/test_integration.py::TestMLflowIntegration::test_model_training_and_basic_prediction
 
-This demonstrates loading models in different environments to show the difference.
+# Test code_paths solution
+uv run pytest tests/test_integration.py::TestMLflowIntegration::test_model_save_with_code_paths
+
+# Test isolated environment loading
+uv run pytest tests/test_integration.py::TestMLflowIntegration::test_model_loading_in_isolated_environment
+```
 
 ## The Solution in Action
 
@@ -100,8 +108,18 @@ The enhanced function automatically includes the `projects/` directory, making t
 
 ## Testing Scenarios
 
-The test suite demonstrates:
-1. Loading models in the same environment
-2. Loading models in clean environments (no repo access)
-3. Loading models from different directories
-4. Comparing behavior with/without code_paths
+The pytest integration suite demonstrates:
+1. **Basic model training and prediction** - Verifies core functionality
+2. **Save/load without code_paths** - Works in same environment only
+3. **Save/load with code_paths** - Works everywhere (portable solution)
+4. **Isolated environment testing** - Simulates different Databricks workspaces
+5. **Spark artifacts handling** - Tests StringIndexer and other Spark components
+6. **Multiple model versions** - Ensures code isolation between versions
+
+## Test Fixtures
+
+- **`mlflow_server`** - Session-scoped MLflow server with automatic cleanup
+- **`spark_session`** - Session-scoped PySpark context
+- **`isolated_env`** - Context manager for testing in clean environments
+- **`trained_model`** - Pre-trained sentiment model for testing
+- **`sample_data`** - Consistent training data across tests
