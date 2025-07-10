@@ -2,7 +2,6 @@ import os
 from typing import Any
 
 import mlflow
-import mlflow.pyfunc
 
 
 def get_projects_source_path() -> str:

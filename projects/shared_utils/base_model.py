@@ -1,7 +1,6 @@
 import logging
 
 import mlflow
-import mlflow.pyfunc
 
 logger = logging.getLogger(__name__)
 

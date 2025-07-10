@@ -23,6 +23,97 @@ def find_free_port():
     return port
 
 
+class MLflowServer:
+    """Context manager for MLflow server lifecycle management."""
+
+    def __init__(self):
+        self.process = None
+        self.temp_dir = None
+        self.original_uri = None
+        self.server_url = None
+
+    def __enter__(self):
+        # Create temporary directory for MLflow artifacts
+        self.temp_dir = tempfile.mkdtemp(prefix="mlflow_test_")
+        mlflow_dir = os.path.join(self.temp_dir, "mlflow_runs")
+        os.makedirs(mlflow_dir, exist_ok=True)
+
+        port = find_free_port()
+
+        # Start MLflow server
+        self.process = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "mlflow",
+                "server",
+                "--backend-store-uri",
+                f"sqlite:///{mlflow_dir}/mlflow.db",
+                "--default-artifact-root",
+                f"{mlflow_dir}/artifacts",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        # Wait for server to start
+        self.server_url = f"http://127.0.0.1:{port}"
+        max_attempts = 60
+        for _attempt in range(max_attempts):
+            try:
+                response = requests.get(f"{self.server_url}/health", timeout=1)
+                if response.status_code == 200:
+                    break
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                pass
+            time.sleep(0.5)
+        else:
+            # Get any error output
+            stdout, stderr = self.process.communicate(timeout=5)
+            self.process.terminate()
+            raise RuntimeError(
+                f"MLflow server failed to start after {max_attempts} attempts.\n"
+                f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
+            )
+
+        # Set MLflow tracking URI
+        self.original_uri = mlflow.get_tracking_uri()
+        mlflow.set_tracking_uri(self.server_url)
+
+        return self.server_url
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            # Restore original MLflow tracking URI
+            if self.original_uri is not None:
+                mlflow.set_tracking_uri(self.original_uri)
+        except Exception as e:
+            print(f"Warning: Failed to restore MLflow tracking URI: {e}")
+
+        try:
+            # Terminate and cleanup process
+            if self.process is not None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait()
+        except Exception as e:
+            print(f"Warning: Failed to terminate MLflow server process: {e}")
+
+        try:
+            # Remove temporary directory
+            if self.temp_dir is not None and os.path.exists(self.temp_dir):
+                shutil.rmtree(self.temp_dir)
+        except Exception as e:
+            print(f"Warning: Failed to remove temporary directory {self.temp_dir}: {e}")
+
+
 @pytest.fixture(scope="session")
 def spark_session():
     """Create a Spark session for testing."""
@@ -44,68 +135,8 @@ def spark_session():
 @pytest.fixture(scope="session")
 def mlflow_server():
     """Start MLflow server for testing with proper lifecycle management."""
-    # Create temporary directory for MLflow artifacts
-    temp_dir = tempfile.mkdtemp(prefix="mlflow_test_")
-    mlflow_dir = os.path.join(temp_dir, "mlflow_runs")
-    os.makedirs(mlflow_dir, exist_ok=True)
-
-    port = find_free_port()
-
-    # Start MLflow server
-    process = subprocess.Popen(
-        [
-            "uv",
-            "run",
-            "mlflow",
-            "server",
-            "--backend-store-uri",
-            f"sqlite:///{mlflow_dir}/mlflow.db",
-            "--default-artifact-root",
-            f"{mlflow_dir}/artifacts",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    # Wait for server to start
-    server_url = f"http://127.0.0.1:{port}"
-    max_attempts = 60
-    for _attempt in range(max_attempts):
-        try:
-            response = requests.get(f"{server_url}/health", timeout=1)
-            if response.status_code == 200:
-                break
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            pass
-        time.sleep(0.5)
-    else:
-        # Get any error output
-        stdout, stderr = process.communicate(timeout=5)
-        process.terminate()
-        raise RuntimeError(
-            f"MLflow server failed to start after {max_attempts} attempts.\n"
-            f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
-        )
-
-    # Set MLflow tracking URI
-    original_uri = mlflow.get_tracking_uri()
-    mlflow.set_tracking_uri(server_url)
-
-    yield server_url
-
-    # Cleanup
-    mlflow.set_tracking_uri(original_uri)
-    process.terminate()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-    shutil.rmtree(temp_dir)
+    with MLflowServer() as server_url:
+        yield server_url
 
 
 @pytest.fixture

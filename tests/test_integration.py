@@ -2,7 +2,6 @@ import os
 import sys
 
 import mlflow
-import mlflow.pyfunc
 from pyspark.ml.feature import StringIndexer
 
 # Add projects to path
