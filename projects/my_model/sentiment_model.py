@@ -52,26 +52,3 @@ class SentimentModel(BaseModelV3):
         )
 
         return results
-
-    def prepare_artifacts(self) -> dict[str, str]:
-        """Prepare artifacts for MLflow logging."""
-        artifact_paths = super().prepare_artifacts()
-
-        # Save the trained pipeline
-        import joblib
-
-        pipeline_path = "sentiment_pipeline.pkl"
-        joblib.dump(self.pipeline, pipeline_path)
-        artifact_paths["pipeline"] = pipeline_path
-
-        return artifact_paths
-
-    def load_context(self, context):
-        """Load artifacts from MLflow context."""
-        super().load_context(context)
-
-        # Load the pipeline
-        import joblib
-
-        if "pipeline" in context.artifacts:
-            self.pipeline = joblib.load(context.artifacts["pipeline"])
