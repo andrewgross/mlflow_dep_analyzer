@@ -52,6 +52,8 @@ with mlflow.start_run():
 
 This repo uses `uv` for environment management. For the simplest setup, make sure it is installed.
 
+**Note:** This repo was developed with python 3.11.11 to match Databricks Runtime 15.4 LTS, though it should be functioning on other versions. You may need to adjust the dev dependency versions to get it functioning.
+
 ```bash
 git clone https://github.com/andrewgross/mlflow-dep-analyzer
 cd mlflow-dep-analyzer
