@@ -25,22 +25,15 @@ class TestModelIndependence:
         texts, labels = sample_data
 
         # Train and save model using repo code
-        model = AutoLoggingSentimentModel(experiment_name="test_inference_pipeline", dry_run=False)
+        model = AutoLoggingSentimentModel(experiment_name="test_isolated_inference", dry_run=False)
 
-        # Use more samples to avoid stratified split error
-        extended_texts = texts + ["Additional positive text", "Additional negative text"] * 3
-        extended_labels = labels + [1, 0] * 3
-        model.train(extended_texts, extended_labels)
+        model.train(texts, labels)
         run_id = model.run_id
 
-        # Give MLflow server time to persist the run
-        import time
-
-        time.sleep(2)
+        model_uri = f"runs:/{run_id}/auto_sentiment_model"
 
         # Use inference pipeline (which is part of repo) to load model
-        pipeline = SentimentInferencePipeline()
-        model_uri = f"runs:/{run_id}/auto_sentiment_model"
+        pipeline = SentimentInferencePipeline(mlflow_tracking_uri=mlflow_server)
         pipeline.load_model(model_uri, alias="test_model")
 
         # Test inference through pipeline
@@ -136,7 +129,7 @@ class TestModelIndependence:
         run_id_2 = model2.run_id
 
         # Test pipeline model management
-        pipeline = SentimentInferencePipeline()
+        pipeline = SentimentInferencePipeline(mlflow_tracking_uri=mlflow_server)
 
         # Load multiple models
         model_uri_1 = f"runs:/{run_id_1}/auto_sentiment_model"

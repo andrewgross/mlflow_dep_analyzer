@@ -106,7 +106,7 @@ class ModelInferencePipeline:
         results = []
 
         for i, batch in enumerate(input_batches):
-            logger.info(f"Processing batch {i+1}/{len(input_batches)}")
+            logger.info(f"Processing batch {i + 1}/{len(input_batches)}")
             batch_results = self.predict(model_key, batch)
             results.append(batch_results)
 
@@ -241,7 +241,7 @@ class SentimentInferencePipeline(ModelInferencePipeline):
         results = []
 
         for i, batch in enumerate(text_batches):
-            logger.info(f"Analyzing sentiment for batch {i+1}/{len(text_batches)} ({len(batch)} texts)")
+            logger.info(f"Analyzing sentiment for batch {i + 1}/{len(text_batches)} ({len(batch)} texts)")
             batch_results = self.analyze_sentiment(model_key, batch)
             results.append(batch_results)
 

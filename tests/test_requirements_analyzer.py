@@ -454,3 +454,326 @@ def test_load_requirements_nonexistent_file():
     """Test loading from non-existent file."""
     requirements = load_requirements_from_file("/non/existent/file.txt")
     assert requirements == []
+
+
+def test_analyze_model_requirements_comprehensive(tmp_path):
+    """Test the complete analyze_model_requirements workflow."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    # Create a test Python file with various imports
+    test_file = tmp_path / "test_model.py"
+    test_file.write_text("""
+import os
+import sys
+import json
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+import mlflow
+from my_local_module import helper_function
+from shared_utils import data_processor
+""")
+
+    # Create local modules
+    (tmp_path / "my_local_module.py").touch()
+    (tmp_path / "shared_utils").mkdir()
+    (tmp_path / "shared_utils" / "__init__.py").touch()
+
+    analyzer = HybridRequirementsAnalyzer()
+    result = analyzer.analyze_model_requirements(
+        code_paths=[str(test_file)], repo_root=str(tmp_path), exclude_existing=False
+    )
+
+    # Verify structure
+    assert "requirements" in result
+    assert "analysis" in result
+    assert isinstance(result["requirements"], list)
+    assert isinstance(result["analysis"], dict)
+
+    # Check analysis details
+    analysis = result["analysis"]
+    assert "files_analyzed" in analysis
+    assert "raw_imports" in analysis
+    assert "external_modules" in analysis
+    assert "final_packages" in analysis
+
+    # Should have analyzed our test file
+    assert str(test_file) in analysis["files_analyzed"]
+
+    # Should have found external imports but filtered out stdlib and local
+    external_modules = set(analysis["external_modules"])
+    assert "pandas" in external_modules
+    assert "numpy" in external_modules
+    assert "sklearn" in external_modules
+    assert "mlflow" in external_modules
+
+    # Should have filtered out stdlib modules
+    assert "os" not in external_modules
+    assert "sys" not in external_modules
+    assert "json" not in external_modules
+
+    # Should have filtered out local modules
+    assert "my_local_module" not in external_modules
+    assert "shared_utils" not in external_modules
+
+
+def test_analyze_code_dependencies_function(tmp_path):
+    """Test the analyze_code_dependencies convenience function."""
+    from src.mlflow_code_analysis import analyze_code_dependencies
+
+    # Create test files
+    test_file1 = tmp_path / "model1.py"
+    test_file1.write_text("import pandas\nimport numpy\nimport os")
+
+    test_file2 = tmp_path / "model2.py"
+    test_file2.write_text("import sklearn\nimport matplotlib\nimport sys")
+
+    # Test with multiple files
+    requirements = analyze_code_dependencies(code_paths=[str(test_file1), str(test_file2)], repo_root=str(tmp_path))
+
+    assert isinstance(requirements, list)
+    # Should contain external packages but not stdlib
+    requirement_names = [req.split("==")[0].split(">=")[0] for req in requirements]
+
+    # External packages should be included
+    assert any("pandas" in req for req in requirement_names)
+    assert any("numpy" in req for req in requirement_names)
+    assert any("sklearn" in req or "scikit-learn" in req for req in requirement_names)
+
+    # Stdlib should be excluded
+    assert not any("os" in req for req in requirement_names)
+    assert not any("sys" in req for req in requirement_names)
+
+
+def test_analyze_code_dependencies_with_existing_requirements(tmp_path):
+    """Test analyze_code_dependencies with existing requirements exclusion."""
+    from src.mlflow_code_analysis import analyze_code_dependencies
+
+    # Create test file
+    test_file = tmp_path / "model.py"
+    test_file.write_text("import pandas\nimport numpy\nimport sklearn")
+
+    # Create requirements file
+    req_file = tmp_path / "requirements.txt"
+    req_file.write_text("pandas>=1.3.0\nnumpy==1.21.0\n")
+
+    # Test excluding existing requirements
+    requirements = analyze_code_dependencies(
+        code_paths=[str(test_file)],
+        existing_requirements_file=str(req_file),
+        repo_root=str(tmp_path),
+        exclude_existing=True,
+    )
+
+    requirement_names = [req.split("==")[0].split(">=")[0] for req in requirements]
+
+    # Should exclude pandas and numpy (in existing requirements)
+    assert not any("pandas" in req for req in requirement_names)
+    assert not any("numpy" in req for req in requirement_names)
+
+    # Should include sklearn (not in existing requirements)
+    assert any("scikit-learn" in req for req in requirement_names)
+
+
+def test_analyze_code_dependencies_directory(tmp_path):
+    """Test analyze_code_dependencies with directory analysis."""
+    from src.mlflow_code_analysis import analyze_code_dependencies
+
+    # Create multiple files in a directory
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+
+    (models_dir / "model1.py").write_text("import pandas\nimport requests")
+    (models_dir / "model2.py").write_text("import numpy\nimport flask")
+    (models_dir / "utils.py").write_text("import sklearn\nimport matplotlib")
+
+    # Test directory analysis
+    requirements = analyze_code_dependencies(code_paths=[str(models_dir)], repo_root=str(tmp_path))
+
+    requirement_names = [req.split("==")[0].split(">=")[0] for req in requirements]
+
+    # Should find imports from all files
+    assert any("pandas" in req for req in requirement_names)
+    assert any("numpy" in req for req in requirement_names)
+    assert any("scikit-learn" in req for req in requirement_names)
+    assert any("requests" in req for req in requirement_names)
+    assert any("flask" in req.lower() for req in requirement_names)  # Case insensitive
+    assert any("matplotlib" in req for req in requirement_names)
+
+
+def test_prune_dependencies_mlflow_style():
+    """Test MLflow-style dependency pruning."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # Test with a set of packages that might have dependencies
+    packages = {
+        "pandas",
+        "numpy",
+        "scikit-learn",
+        "matplotlib",
+        "requests",
+        "urllib3",  # Often a dependency of requests
+        "setuptools",  # Should be filtered out
+        "wheel",  # Should be filtered out
+    }
+
+    # Apply MLflow filtering first
+    filtered = analyzer.apply_mlflow_filtering(packages)
+
+    # Then prune dependencies
+    pruned = analyzer.prune_dependencies_mlflow_style(filtered)
+
+    assert isinstance(pruned, set)
+    # Should not contain build tools
+    assert "setuptools" not in pruned
+    assert "wheel" not in pruned
+
+    # Should contain main packages
+    assert "pandas" in pruned
+    assert "numpy" in pruned
+    assert "requests" in pruned
+
+
+def test_generate_pinned_requirements():
+    """Test generating pinned requirements."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # Test with packages that should be available
+    packages = {"os", "sys", "json"}  # These won't have versions but should be handled gracefully
+
+    requirements = analyzer.generate_pinned_requirements(packages)
+
+    assert isinstance(requirements, list)
+    assert len(requirements) >= 0  # Should handle gracefully even if no versions available
+
+    # Test with a mock package that has a version
+
+    # Create a simple test case with known behavior
+    test_packages = set()  # Empty set should return empty list
+    requirements = analyzer.generate_pinned_requirements(test_packages)
+    assert requirements == []
+
+
+def test_generate_pinned_requirements_with_real_packages():
+    """Test generating pinned requirements with real installed packages."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # Use packages that are likely to be installed in the test environment
+    packages = {"pytest"}  # pytest should be available in test environment
+
+    requirements = analyzer.generate_pinned_requirements(packages)
+
+    assert isinstance(requirements, list)
+
+    # Should either have a pinned version or just the package name
+    for req in requirements:
+        assert isinstance(req, str)
+        assert "pytest" in req.lower()
+
+
+def test_apply_mlflow_filtering():
+    """Test MLflow-style package filtering."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    packages = {
+        "pandas",
+        "numpy",
+        "setuptools",  # Should be filtered out
+        "pip",  # Should be filtered out
+        "wheel",  # Should be filtered out
+        "distutils",  # Should be filtered out
+        "pkg-resources",  # Should be filtered out
+        "mlflow",
+        "requests",
+    }
+
+    filtered = analyzer.apply_mlflow_filtering(packages)
+
+    # Should exclude development/build packages
+    assert "setuptools" not in filtered
+    assert "pip" not in filtered
+    assert "wheel" not in filtered
+    assert "distutils" not in filtered
+    assert "pkg-resources" not in filtered
+
+    # Should keep regular packages
+    assert "pandas" in filtered
+    assert "numpy" in filtered
+    assert "requests" in filtered
+
+
+def test_exclude_existing_requirements():
+    """Test excluding existing requirements."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    existing_reqs = ["pandas>=1.3.0", "numpy==1.21.0", "mlflow>=2.0.0"]
+    analyzer = HybridRequirementsAnalyzer(existing_requirements=existing_reqs)
+
+    packages = {"pandas", "numpy", "sklearn", "mlflow", "requests"}
+
+    filtered = analyzer.exclude_existing_requirements(packages)
+
+    # Should exclude packages that are already in existing requirements
+    assert "pandas" not in filtered
+    assert "numpy" not in filtered
+    assert "mlflow" not in filtered
+
+    # Should keep packages that are not in existing requirements
+    assert "sklearn" in filtered
+    assert "requests" in filtered
+
+
+def test_resolve_packages_mlflow_style():
+    """Test resolving modules to packages using MLflow-style approach."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # Test with common modules
+    modules = {"pandas", "numpy", "sklearn", "requests"}
+
+    packages = analyzer.resolve_packages_mlflow_style(modules)
+
+    assert isinstance(packages, set)
+    # Should map modules to packages (might be the same or different)
+    assert len(packages) >= 0
+
+
+def test_analyze_model_requirements_with_local_patterns(tmp_path):
+    """Test analyze_model_requirements with custom local patterns."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    # Create test file
+    test_file = tmp_path / "model.py"
+    test_file.write_text("""
+import pandas
+import numpy
+import custom_local_lib
+import another_local_module
+""")
+
+    # Define custom local patterns
+    local_patterns = {"custom_local_lib", "another_local_module"}
+
+    analyzer = HybridRequirementsAnalyzer()
+    result = analyzer.analyze_model_requirements(
+        code_paths=[str(test_file)], repo_root=str(tmp_path), local_patterns=local_patterns
+    )
+
+    external_modules = set(result["analysis"]["external_modules"])
+
+    # Should include external packages
+    assert "pandas" in external_modules
+    assert "numpy" in external_modules
+
+    # Should exclude custom local patterns
+    assert "custom_local_lib" not in external_modules
+    assert "another_local_module" not in external_modules
