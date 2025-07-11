@@ -197,26 +197,13 @@ class HybridRequirementsAnalyzer:
     def filter_local_modules(
         self, imports: set[str], repo_root: str | None = None, local_patterns: set[str] | None = None
     ) -> set[str]:
-        """Filter out local project modules using MLflow-style rules."""
+        """Filter out local project modules using dynamic detection and MLflow-style rules."""
         filtered = set()
         repo_name = Path(repo_root).name if repo_root else ""
 
-        # Default local patterns - can be overridden
-        if local_patterns is None:
-            local_patterns = {
-                "projects",
-                "shared_utils",
-                "text_utils",
-                "validation",
-                "constants",
-                "my_model",
-                "inference",
-                repo_name,
-            }
-
         for module in imports:
             # Apply MLflow-style filtering
-            if self._should_exclude_module(module, local_patterns):
+            if self._should_exclude_module(module, repo_name, repo_root, local_patterns):
                 continue
 
             # Apply stdlib filtering in fallback mode
@@ -228,8 +215,10 @@ class HybridRequirementsAnalyzer:
 
         return filtered
 
-    def _should_exclude_module(self, module: str, local_patterns: set[str]) -> bool:
-        """Determine if a module should be excluded using MLflow-style rules."""
+    def _should_exclude_module(
+        self, module: str, repo_name: str, repo_root: str | None = None, local_patterns: set[str] | None = None
+    ) -> bool:
+        """Determine if a module should be excluded using dynamic detection and MLflow-style rules."""
         # MLflow excludes private modules
         if module.startswith("_"):
             return True
@@ -238,14 +227,54 @@ class HybridRequirementsAnalyzer:
         if not module or module.startswith("."):
             return True
 
-        # Skip known local patterns
-        if module in local_patterns or any(module.startswith(p + ".") for p in local_patterns):
+        # Check if starts with repo name
+        if repo_name and module.startswith(repo_name):
+            return True
+
+        # Check against custom local patterns if provided
+        if local_patterns and (module in local_patterns or any(module.startswith(p + ".") for p in local_patterns)):
+            return True
+
+        # Dynamic detection: check if module exists in repository
+        if repo_root and self._module_exists_in_repo(module, repo_root):
             return True
 
         # Special handling for databricks (allow external databricks packages)
         if module.startswith("databricks"):
             external_databricks = {"databricks.sdk", "databricks.cli", "databricks.connect"}
             return not any(module.startswith(ext) for ext in external_databricks)
+
+        return False
+
+    def _module_exists_in_repo(self, module_name: str, repo_root: str) -> bool:
+        """Check if a module exists as a local file or directory in the repository."""
+        repo_path = Path(repo_root)
+        top_level_module = module_name.split(".")[0]
+
+        # Check common locations where Python modules might exist
+        search_paths = [
+            repo_path,  # Root level
+            repo_path / "src",  # src/ directory
+            repo_path / "lib",  # lib/ directory
+            repo_path / "packages",  # packages/ directory
+            repo_path / "examples",  # examples/ directory (for our project structure)
+        ]
+
+        for search_path in search_paths:
+            if not search_path.exists():
+                continue
+
+            # Check for package directory (with __init__.py)
+            package_dir = search_path / top_level_module
+            if package_dir.is_dir():
+                # It's a local package if it has __init__.py or contains .py files
+                if (package_dir / "__init__.py").exists() or any(package_dir.glob("*.py")):
+                    return True
+
+            # Check for module file
+            module_file = search_path / f"{top_level_module}.py"
+            if module_file.is_file():
+                return True
 
         return False
 

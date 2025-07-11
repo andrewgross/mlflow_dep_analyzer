@@ -18,6 +18,10 @@ class TestCodePathAnalyzer:
         """Test analyzing a file for local imports."""
         analyzer = CodePathAnalyzer(str(tmp_path))
 
+        # Create a local module so it gets detected as local
+        (tmp_path / "projects").mkdir()
+        (tmp_path / "projects" / "__init__.py").touch()
+
         test_file = tmp_path / "test_model.py"
         test_file.write_text("""
 import os
@@ -28,26 +32,43 @@ import external_package
 
         imports = analyzer.analyze_file(str(test_file))
 
-        # Should detect local imports (gets the full module name)
-        assert "projects" in imports or any("projects" in imp for imp in imports)
-        # External packages should not be considered local
+        # Should detect local imports only (full module names)
+        assert "projects.shared" in imports
+        # External packages should not be in the results (this method returns only local imports)
         assert "pandas" not in imports
         assert "os" not in imports
+        assert "external_package" not in imports
+
+        # Test that we detect the number of local imports we expect
+        assert len(imports) == 1  # Only projects.shared should be local
 
     def test_is_local_import(self, tmp_path):
-        """Test local import detection logic."""
+        """Test local import detection logic using dynamic detection."""
         analyzer = CodePathAnalyzer(str(tmp_path))
         repo_name = tmp_path.name
 
-        # Test various import patterns
+        # Create actual local modules in the test repo
+        (tmp_path / "projects").mkdir()
+        (tmp_path / "projects" / "__init__.py").touch()
+        (tmp_path / "shared_utils").mkdir()
+        (tmp_path / "shared_utils" / "__init__.py").touch()
+        (tmp_path / "local_module.py").touch()
+
+        # Create a repo-named module
+        (tmp_path / repo_name).mkdir()
+        (tmp_path / repo_name / "__init__.py").touch()
+
+        # Test various import patterns - should detect as local
         assert analyzer._is_local_import("projects.my_model", repo_name)
         assert analyzer._is_local_import("shared_utils.base", repo_name)
         assert analyzer._is_local_import(f"{repo_name}.module", repo_name)
+        assert analyzer._is_local_import("local_module", repo_name)
 
         # External packages should not be local
         assert not analyzer._is_local_import("pandas", repo_name)
         assert not analyzer._is_local_import("numpy.array", repo_name)
         assert not analyzer._is_local_import("sklearn.linear_model", repo_name)
+        assert not analyzer._is_local_import("nonexistent_module", repo_name)
 
     def test_analyze_code_paths_complete(self, tmp_path):
         """Test complete code path analysis."""

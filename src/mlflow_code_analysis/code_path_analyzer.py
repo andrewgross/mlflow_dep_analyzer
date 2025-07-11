@@ -72,34 +72,44 @@ class CodePathAnalyzer:
         return local_imports
 
     def _is_local_import(self, module_name: str, repo_name: str) -> bool:
-        """Check if a module name represents a local import."""
+        """Check if a module name represents a local import using dynamic detection."""
         if not module_name:
             return False
 
         # Check if starts with repo name
-        if module_name.startswith(repo_name):
+        if repo_name and module_name.startswith(repo_name):
             return True
 
-        # Check if starts with known local patterns
-        local_patterns = {
-            "projects",
-            "shared_utils",
-            "text_utils",
-            "validation",
-            "constants",
-            "my_model",
-            "inference",
-            "src",
-        }
+        # Get the top-level module name
+        top_level_module = module_name.split(".")[0]
 
-        if any(module_name.startswith(pattern) for pattern in local_patterns):
-            return True
+        # Check if this module exists as a directory or file in the repo
+        return self._module_exists_in_repo(top_level_module)
 
-        # Top-level single word modules might be local (heuristic)
-        if "." not in module_name and len(module_name.split(".")) == 1:
-            # Check if this module exists as a directory in the repo
-            potential_path = self.repo_root / module_name
-            if potential_path.exists() and potential_path.is_dir():
+    def _module_exists_in_repo(self, module_name: str) -> bool:
+        """Check if a module exists as a local file or directory in the repository."""
+        # Check common locations where Python modules might exist
+        search_paths = [
+            self.repo_root,  # Root level
+            self.repo_root / "src",  # src/ directory
+            self.repo_root / "lib",  # lib/ directory
+            self.repo_root / "packages",  # packages/ directory
+        ]
+
+        for search_path in search_paths:
+            if not search_path.exists():
+                continue
+
+            # Check for package directory (with __init__.py)
+            package_dir = search_path / module_name
+            if package_dir.is_dir():
+                # It's a local package if it has __init__.py or contains .py files
+                if (package_dir / "__init__.py").exists() or any(package_dir.glob("*.py")):
+                    return True
+
+            # Check for module file
+            module_file = search_path / f"{module_name}.py"
+            if module_file.is_file():
                 return True
 
         return False

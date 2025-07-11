@@ -36,9 +36,17 @@ from sklearn.linear_model import LogisticRegression
         finally:
             os.unlink(temp_file)
 
-    def test_filter_local_modules(self):
-        """Test filtering out local project modules."""
+    def test_filter_local_modules(self, tmp_path):
+        """Test filtering out local project modules using dynamic detection."""
         analyzer = HybridRequirementsAnalyzer()
+
+        # Create actual local modules in the test repo
+        (tmp_path / "projects").mkdir()
+        (tmp_path / "projects" / "__init__.py").touch()
+        (tmp_path / "shared_utils").mkdir()
+        (tmp_path / "shared_utils" / "__init__.py").touch()
+        (tmp_path / "my_model.py").touch()
+
         imports = {
             "pandas",
             "numpy",
@@ -52,12 +60,47 @@ from sklearn.linear_model import LogisticRegression
             "datetime",
         }
 
-        filtered = analyzer.filter_local_modules(imports, "/test/repo")
+        filtered = analyzer.filter_local_modules(imports, str(tmp_path))
 
-        # Should exclude local patterns
+        # Should exclude local modules that exist in the repo
         assert "pandas" in filtered
-        assert "projects" not in filtered
-        assert "shared_utils" not in filtered
+        assert "projects" not in filtered  # exists as directory with __init__.py
+        assert "shared_utils" not in filtered  # exists as directory with __init__.py
+        assert "my_model" not in filtered  # exists as .py file
+        assert "mlflow" in filtered  # external package
+        assert "numpy" in filtered  # external package
+
+    def test_dynamic_local_detection_no_hardcoded_patterns(self, tmp_path):
+        """Test that dynamic detection works with arbitrary project-specific names."""
+        analyzer = HybridRequirementsAnalyzer()
+
+        # Create modules with completely arbitrary names (not in old hardcoded list)
+        (tmp_path / "my_custom_package").mkdir()
+        (tmp_path / "my_custom_package" / "__init__.py").touch()
+        (tmp_path / "arbitrary_module.py").touch()
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "business_logic").mkdir()
+        (tmp_path / "src" / "business_logic" / "__init__.py").touch()
+
+        imports = {
+            "pandas",
+            "numpy",
+            "my_custom_package",  # should be detected as local
+            "arbitrary_module",  # should be detected as local
+            "business_logic",  # should be detected as local (in src/)
+            "some_external_lib",  # should not be detected as local
+        }
+
+        filtered = analyzer.filter_local_modules(imports, str(tmp_path))
+
+        # Should exclude dynamically detected local modules
+        assert "pandas" in filtered
+        assert "numpy" in filtered
+        assert "some_external_lib" in filtered
+        # These should be filtered out as local
+        assert "my_custom_package" not in filtered
+        assert "arbitrary_module" not in filtered
+        assert "business_logic" not in filtered
 
     def test_analyze_directory(self, tmp_path):
         """Test analyzing all Python files in a directory."""
