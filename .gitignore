@@ -37,3 +37,4 @@ mlruns/
 category_indexer/
 .pytest_cache/
 .claude/
+mlartifacts/
