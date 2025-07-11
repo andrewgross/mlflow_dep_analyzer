@@ -2,9 +2,6 @@
 Tests for the CodePathAnalyzer.
 """
 
-import os
-import sys
-
 from mlflow_dep_analyzer.code_path_analyzer import CodePathAnalyzer, analyze_code_paths, find_model_code_paths
 
 

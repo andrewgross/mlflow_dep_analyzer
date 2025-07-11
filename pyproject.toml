@@ -75,11 +75,11 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["src"]
 python_files = ["test_*.py"]
-python_classes = ["Test*"] 
+python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "-v",
-    "--tb=short", 
+    "--tb=short",
     "--strict-markers",
     "--disable-warnings"
 ]
@@ -102,7 +102,7 @@ select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
     "F",  # pyflakes
-    "I",  # isort
+    "I2",  # isort
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade

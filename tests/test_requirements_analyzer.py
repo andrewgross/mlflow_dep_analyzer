@@ -385,7 +385,6 @@ def test_edge_cases_and_error_handling():
 
 def test_dynamic_detection_completeness():
     """Test that dynamic detection finds expected stdlib modules."""
-    import sys
 
     from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 

@@ -171,7 +171,6 @@ class AutoLoggingSentimentModel(BaseModelV3):
             import os
 
             # Get the model file and its dependencies first
-            import sys
             import tempfile
 
             current_file = os.path.abspath(__file__)
