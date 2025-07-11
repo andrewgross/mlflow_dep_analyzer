@@ -38,3 +38,4 @@ category_indexer/
 .pytest_cache/
 .claude/
 mlartifacts/
+.ruff_cache/
