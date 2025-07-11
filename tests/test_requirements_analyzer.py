@@ -6,10 +6,7 @@ import os
 import sys
 import tempfile
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from src.mlflow_code_analysis.requirements_analyzer import HybridRequirementsAnalyzer, load_requirements_from_file
+from mlflow_dep_analyzer.requirements_analyzer import HybridRequirementsAnalyzer, load_requirements_from_file
 
 
 class TestHybridRequirementsAnalyzer:
@@ -202,7 +199,7 @@ sklearn>=1.0.0
 
 def test_is_stdlib_module_convenience_function():
     """Test the convenience function for stdlib detection."""
-    from src.mlflow_code_analysis import is_stdlib_module
+    from mlflow_dep_analyzer import is_stdlib_module
 
     # Test that the convenience function works the same as the method
     assert is_stdlib_module("os")
@@ -218,7 +215,7 @@ def test_comprehensive_module_classification():
     import tempfile
     from pathlib import Path
 
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     # Create a temporary project structure
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -359,7 +356,7 @@ def test_comprehensive_module_classification():
 
 def test_edge_cases_and_error_handling():
     """Test edge cases and error handling in module detection."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -390,7 +387,7 @@ def test_dynamic_detection_completeness():
     """Test that dynamic detection finds expected stdlib modules."""
     import sys
 
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -458,7 +455,7 @@ def test_load_requirements_nonexistent_file():
 
 def test_analyze_model_requirements_comprehensive(tmp_path):
     """Test the complete analyze_model_requirements workflow."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     # Create a test Python file with various imports
     test_file = tmp_path / "test_model.py"
@@ -519,7 +516,7 @@ from shared_utils import data_processor
 
 def test_analyze_code_dependencies_function(tmp_path):
     """Test the analyze_code_dependencies convenience function."""
-    from src.mlflow_code_analysis import analyze_code_dependencies
+    from mlflow_dep_analyzer import analyze_code_dependencies
 
     # Create test files
     test_file1 = tmp_path / "model1.py"
@@ -547,7 +544,7 @@ def test_analyze_code_dependencies_function(tmp_path):
 
 def test_analyze_code_dependencies_with_existing_requirements(tmp_path):
     """Test analyze_code_dependencies with existing requirements exclusion."""
-    from src.mlflow_code_analysis import analyze_code_dependencies
+    from mlflow_dep_analyzer import analyze_code_dependencies
 
     # Create test file
     test_file = tmp_path / "model.py"
@@ -577,7 +574,7 @@ def test_analyze_code_dependencies_with_existing_requirements(tmp_path):
 
 def test_analyze_code_dependencies_directory(tmp_path):
     """Test analyze_code_dependencies with directory analysis."""
-    from src.mlflow_code_analysis import analyze_code_dependencies
+    from mlflow_dep_analyzer import analyze_code_dependencies
 
     # Create multiple files in a directory
     models_dir = tmp_path / "models"
@@ -603,7 +600,7 @@ def test_analyze_code_dependencies_directory(tmp_path):
 
 def test_prune_dependencies_mlflow_style():
     """Test MLflow-style dependency pruning."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -638,7 +635,7 @@ def test_prune_dependencies_mlflow_style():
 
 def test_generate_pinned_requirements():
     """Test generating pinned requirements."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -660,7 +657,7 @@ def test_generate_pinned_requirements():
 
 def test_generate_pinned_requirements_with_real_packages():
     """Test generating pinned requirements with real installed packages."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -679,7 +676,7 @@ def test_generate_pinned_requirements_with_real_packages():
 
 def test_apply_mlflow_filtering():
     """Test MLflow-style package filtering."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -712,7 +709,7 @@ def test_apply_mlflow_filtering():
 
 def test_exclude_existing_requirements():
     """Test excluding existing requirements."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     existing_reqs = ["pandas>=1.3.0", "numpy==1.21.0", "mlflow>=2.0.0"]
     analyzer = HybridRequirementsAnalyzer(existing_requirements=existing_reqs)
@@ -733,7 +730,7 @@ def test_exclude_existing_requirements():
 
 def test_resolve_packages_mlflow_style():
     """Test resolving modules to packages using MLflow-style approach."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     analyzer = HybridRequirementsAnalyzer()
 
@@ -749,7 +746,7 @@ def test_resolve_packages_mlflow_style():
 
 def test_analyze_model_requirements_with_local_patterns(tmp_path):
     """Test analyze_model_requirements with custom local patterns."""
-    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+    from mlflow_dep_analyzer import HybridRequirementsAnalyzer
 
     # Create test file
     test_file = tmp_path / "model.py"

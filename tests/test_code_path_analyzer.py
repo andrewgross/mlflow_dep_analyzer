@@ -5,10 +5,7 @@ Tests for the CodePathAnalyzer.
 import os
 import sys
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from src.mlflow_code_analysis.code_path_analyzer import CodePathAnalyzer, analyze_code_paths, find_model_code_paths
+from mlflow_dep_analyzer.code_path_analyzer import CodePathAnalyzer, analyze_code_paths, find_model_code_paths
 
 
 class TestCodePathAnalyzer:

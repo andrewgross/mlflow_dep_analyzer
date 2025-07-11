@@ -177,9 +177,8 @@ class AutoLoggingSentimentModel(BaseModelV3):
             current_file = os.path.abspath(__file__)
             repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 
-            # Import from our new src-based package
-            sys.path.insert(0, os.path.join(repo_root, "src"))
-            from mlflow_code_analysis import HybridRequirementsAnalyzer, analyze_code_dependencies
+            # Import from our new package
+            from mlflow_dep_analyzer import HybridRequirementsAnalyzer, analyze_code_dependencies
 
             self.log_model_info("Generating smart requirements using hybrid MLflow + AST analyzer...")
 
