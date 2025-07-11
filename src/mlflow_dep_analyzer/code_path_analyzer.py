@@ -215,7 +215,7 @@ class CodePathAnalyzer:
         if include_patterns is None:
             include_patterns = ["**/*.py"]
         if exclude_patterns is None:
-            exclude_patterns = ["**/__pycache__/**", "**/.git/**", "**/.*"]
+            exclude_patterns = ["**/__pycache__/**", "**/.git/**"]
 
         all_dependencies = {}
         all_required_files = set()

@@ -91,6 +91,8 @@ from projects.utils import helper
 
         # Should include entry file
         assert str(model_file) in result["entry_files"]
+        assert str(model_file) in result["required_files"]
+        assert str(utils_file) in result["required_files"]
 
 
 def test_analyze_code_paths_convenience(tmp_path):
