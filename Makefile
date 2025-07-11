@@ -1,4 +1,4 @@
-.PHONY: help setup test test-examples test-src clean lint format all
+.PHONY: help setup test test-examples test-src clean lint format build all
 
 help:
 	@echo "Available targets:"
@@ -8,7 +8,8 @@ help:
 	@echo "  test-src     - Run src tests only"
 	@echo "  lint         - Run pre-commit hooks on all files"
 	@echo "  format       - Run formatting tools (ruff + isort)"
-	@echo "  clean        - Clean up temp files"
+	@echo "  build        - Build the package"
+	@echo "  clean        - Clean up temp files and build artifacts"
 	@echo "  all          - Setup and test"
 
 setup:
@@ -35,12 +36,20 @@ format:
 	uv run ruff format .
 	uv run isort .
 
+build:
+	@echo "Building package..."
+	uv build
+	@echo "Build complete!"
+
 clean:
 	@echo "Cleaning up..."
 	rm -rf __pycache__/ .pytest_cache/
 	rm -rf mlruns/ mlflow_runs/
 	rm -f sentiment_pipeline.pkl mlflow_server.*
 	rm -rf category_indexer/
+	rm -rf dist/ build/ src/mlflow_dep_analyzer.egg-info/
+	find . -name "*.pyc" -delete
+	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "Done!"
 
 all: setup test
