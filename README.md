@@ -367,9 +367,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📚 **Documentation**: [Full API docs](https://github.com/your-username/mlflow-dep-analyzer/docs)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-username/mlflow-dep-analyzer/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/your-username/mlflow-dep-analyzer/discussions)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/andrewgross/mlflow-dep-analyzer/issues)
 
 ---
 

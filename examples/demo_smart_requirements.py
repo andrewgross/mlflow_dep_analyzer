@@ -94,21 +94,23 @@ def demo_smart_requirements():
             print(f"Model URI: {model_uri}")
             print("\nGenerated minimal requirements.txt contains only:")
 
-            # Use our improved analyzer to show what was analyzed
-            from projects.shared_utils.requirements_analyzer import RequirementsAnalyzer, load_requirements_from_file
+            # Use our new src-based analyzer to show what was analyzed
+            from src.mlflow_code_analysis import analyze_code_dependencies
 
             # Load base requirements to show the filtering effect
-            base_requirements = load_requirements_from_file("requirements.txt")
+            base_requirements = []
+            if os.path.exists("requirements.txt"):
+                with open("requirements.txt") as f:
+                    base_requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
-            analyzer = RequirementsAnalyzer(existing_requirements=base_requirements)
+            # Analyze the model file and shared utilities
             current_file = os.path.abspath(model.__class__.__module__.replace(".", "/") + ".py")
-            shared_utils_dir = os.path.join(os.path.dirname(os.path.dirname(current_file)), "shared_utils")
 
             # Generate requirements excluding base packages
-            requirements = analyzer.generate_requirements(
-                file_paths=[current_file],
-                directory_paths=[shared_utils_dir],
-                include_versions=True,
+            requirements = analyze_code_dependencies(
+                code_paths=[current_file],
+                repo_root=".",
+                existing_requirements=base_requirements,
                 exclude_existing=True,
             )
 

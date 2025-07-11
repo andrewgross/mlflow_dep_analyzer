@@ -169,16 +169,19 @@ class AutoLoggingSentimentModel(BaseModelV3):
         """Generate smart requirements.txt for model dependencies using hybrid MLflow + AST analyzer."""
         try:
             import os
+
+            # Get the model file and its dependencies first
+            import sys
             import tempfile
 
-            from ..shared_utils.mlflow_hybrid_analyzer import MLflowHybridAnalyzer
-            from ..shared_utils.requirements_analyzer import load_requirements_from_file
-
-            self.log_model_info("Generating smart requirements using hybrid MLflow + AST analyzer...")
-
-            # Get the model file and its dependencies
             current_file = os.path.abspath(__file__)
             repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+
+            # Import from our new src-based package
+            sys.path.insert(0, os.path.join(repo_root, "src"))
+            from mlflow_code_analysis import HybridRequirementsAnalyzer, analyze_code_dependencies
+
+            self.log_model_info("Generating smart requirements using hybrid MLflow + AST analyzer...")
 
             # Get all files that should be analyzed
             model_dir = os.path.dirname(current_file)
@@ -188,19 +191,24 @@ class AutoLoggingSentimentModel(BaseModelV3):
             existing_requirements_file = os.path.join(repo_root, "requirements.txt")
             base_requirements = []
             if os.path.exists(existing_requirements_file):
-                base_requirements = load_requirements_from_file(existing_requirements_file)
+                with open(existing_requirements_file) as f:
+                    base_requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
                 self.log_model_info(f"Found base requirements.txt with {len(base_requirements)} packages")
 
-            # Initialize hybrid analyzer
-            analyzer = MLflowHybridAnalyzer(existing_requirements=base_requirements)
-
-            # Analyze using hybrid approach
+            # Analyze using our new hybrid approach
             code_paths = [current_file, shared_utils_dir]
+            requirements = analyze_code_dependencies(
+                code_paths=code_paths,
+                repo_root=repo_root,
+                existing_requirements=base_requirements,
+                exclude_existing=True,
+            )
+
+            # Get detailed analysis for logging
+            analyzer = HybridRequirementsAnalyzer(existing_requirements=base_requirements)
             result = analyzer.analyze_model_requirements(
                 code_paths=code_paths, repo_root=repo_root, exclude_existing=True
             )
-
-            requirements = result["requirements"]
             analysis = result["analysis"]
 
             # Create temporary requirements file with detailed info
