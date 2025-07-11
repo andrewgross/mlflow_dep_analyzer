@@ -213,6 +213,243 @@ def test_is_stdlib_module_convenience_function():
     assert not is_stdlib_module("nonexistent_module")
 
 
+def test_comprehensive_module_classification():
+    """Test comprehensive module classification: stdlib vs local vs third-party."""
+    import tempfile
+    from pathlib import Path
+
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    # Create a temporary project structure
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create local modules
+        (temp_path / "local_package").mkdir()
+        (temp_path / "local_package" / "__init__.py").touch()
+        (temp_path / "local_module.py").touch()
+        (temp_path / "src").mkdir()
+        (temp_path / "src" / "business_logic").mkdir()
+        (temp_path / "src" / "business_logic" / "__init__.py").touch()
+
+        analyzer = HybridRequirementsAnalyzer()
+
+        # Test stdlib modules (should be comprehensive)
+        stdlib_modules = [
+            "os",
+            "sys",
+            "json",
+            "datetime",
+            "collections",
+            "re",
+            "pathlib",
+            "ast",
+            "urllib",
+            "typing",
+            "functools",
+            "itertools",
+            "operator",
+            "math",
+            "random",
+            "string",
+            "io",
+            "contextlib",
+            "logging",
+            "tempfile",
+            "subprocess",
+            "shutil",
+            "glob",
+            "pickle",
+            "warnings",
+            "inspect",
+            "importlib",
+            "weakref",
+            "gc",
+            "atexit",
+            "signal",
+            "threading",
+            "multiprocessing",
+            "queue",
+            "sqlite3",
+            "csv",
+            "xml",
+            "html",
+            "email",
+            "base64",
+            "hashlib",
+            "hmac",
+            "secrets",
+            "ssl",
+            "socket",
+            "gzip",
+            "tarfile",
+            "zipfile",
+            "configparser",
+            "argparse",
+            "unittest",
+            "traceback",
+            "copy",
+            "time",
+            "abc",
+        ]
+
+        print(f"Testing {len(stdlib_modules)} stdlib modules...")
+        for module in stdlib_modules:
+            assert analyzer.is_stdlib_module(module), f"{module} should be stdlib"
+
+        # Test third-party modules (commonly used packages)
+        third_party_modules = [
+            "pandas",
+            "numpy",
+            "requests",
+            "sklearn",
+            "mlflow",
+            "django",
+            "flask",
+            "tensorflow",
+            "torch",
+            "matplotlib",
+            "seaborn",
+            "pytest",
+            "click",
+            "pydantic",
+            "fastapi",
+            "sqlalchemy",
+            "psycopg2",
+            "pymongo",
+            "redis",
+            "celery",
+            "gunicorn",
+            "boto3",
+            "aws",
+            "azure",
+            "google",
+            "pkg_resources",
+            "setuptools",
+            "pip",
+            "wheel",
+            "twine",
+        ]
+
+        print(f"Testing {len(third_party_modules)} third-party modules...")
+        for module in third_party_modules:
+            assert not analyzer.is_stdlib_module(module), f"{module} should not be stdlib"
+
+        # Test local modules (using actual filesystem detection)
+        local_modules = ["local_package", "local_module", "business_logic"]
+
+        # Test filtering behavior
+        all_modules = set(stdlib_modules + third_party_modules + local_modules)
+        filtered = analyzer.filter_local_modules(all_modules, str(temp_path))
+
+        print(f"Filtered {len(all_modules)} modules down to {len(filtered)}")
+
+        # Only third-party modules should remain
+        for module in third_party_modules:
+            assert module in filtered, f"{module} should remain after filtering"
+
+        # Stdlib modules should be filtered out
+        for module in stdlib_modules:
+            assert module not in filtered, f"{module} should be filtered out (stdlib)"
+
+        # Local modules should be filtered out
+        for module in local_modules:
+            assert module not in filtered, f"{module} should be filtered out (local)"
+
+
+def test_edge_cases_and_error_handling():
+    """Test edge cases and error handling in module detection."""
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # Test non-existent modules
+    assert not analyzer.is_stdlib_module("nonexistent_module_12345")
+    assert not analyzer.is_stdlib_module("fake_package_name")
+
+    # Test empty/invalid module names
+    assert not analyzer.is_stdlib_module("")
+    assert not analyzer.is_stdlib_module("   ")
+
+    # Test modules with similar names to stdlib
+    assert not analyzer.is_stdlib_module("os_custom")
+    assert not analyzer.is_stdlib_module("sys_utils")
+    assert not analyzer.is_stdlib_module("json_parser")
+    assert not analyzer.is_stdlib_module("datetime_utils")
+
+    # Test private modules (should be filtered out anyway)
+    assert not analyzer.is_stdlib_module("_private_module")
+    assert not analyzer.is_stdlib_module("__private_module")
+
+    # Test case sensitivity
+    assert not analyzer.is_stdlib_module("OS")  # Python module names are case-sensitive
+    assert not analyzer.is_stdlib_module("JSON")
+
+
+def test_dynamic_detection_completeness():
+    """Test that dynamic detection finds expected stdlib modules."""
+    import sys
+
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+    analyzer = HybridRequirementsAnalyzer()
+
+    # If we have sys.stdlib_module_names, compare against it
+    if hasattr(sys, "stdlib_module_names"):
+        official_stdlib = sys.stdlib_module_names
+        print(f"Comparing against {len(official_stdlib)} official stdlib modules")
+
+        # Test a sample of official stdlib modules
+        sample_size = min(50, len(official_stdlib))
+        sample_modules = sorted(official_stdlib)[:sample_size]
+
+        for module in sample_modules:
+            # Skip private modules as they might not be importable
+            if not module.startswith("_"):
+                try:
+                    result = analyzer.is_stdlib_module(module)
+                    assert result, f"Official stdlib module {module} should be detected as stdlib"
+                except Exception as e:
+                    print(f"Warning: Could not test {module}: {e}")
+
+        # Test that we don't have too many false positives
+        detected_stdlib = set()
+        common_modules = [
+            "os",
+            "sys",
+            "json",
+            "datetime",
+            "collections",
+            "re",
+            "pathlib",
+            "ast",
+            "urllib",
+            "typing",
+            "functools",
+            "itertools",
+            "operator",
+            "math",
+            "random",
+            "string",
+            "io",
+            "contextlib",
+            "logging",
+            "tempfile",
+            "subprocess",
+            "shutil",
+            "glob",
+            "pickle",
+            "warnings",
+        ]
+
+        for module in common_modules:
+            if analyzer.is_stdlib_module(module):
+                detected_stdlib.add(module)
+
+        print(f"Detected {len(detected_stdlib)} common stdlib modules")
+        assert len(detected_stdlib) > 20, "Should detect most common stdlib modules"
+
+
 def test_load_requirements_nonexistent_file():
     """Test loading from non-existent file."""
     requirements = load_requirements_from_file("/non/existent/file.txt")

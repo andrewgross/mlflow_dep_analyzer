@@ -89,123 +89,53 @@ class HybridRequirementsAnalyzer:
         return self._detect_stdlib_modules_importlib()
 
     def _detect_stdlib_modules_importlib(self) -> set[str]:
-        """Detect stdlib modules using importlib for Python < 3.10."""
+        """Detect stdlib modules dynamically using filesystem and importlib for Python < 3.10."""
+        import importlib.util
         import os
+        from pathlib import Path
 
         # Get Python's stdlib directory
-        stdlib_path = os.path.dirname(os.__file__)
+        stdlib_path = Path(os.__file__).parent
+        stdlib_modules = set()
 
-        # Common stdlib modules for fallback (much smaller, core-only list)
-        core_stdlib = {
-            "os",
-            "sys",
-            "datetime",
-            "json",
-            "pickle",
-            "logging",
-            "pathlib",
-            "tempfile",
-            "subprocess",
-            "shutil",
-            "glob",
-            "collections",
-            "re",
-            "urllib",
-            "http",
-            "functools",
-            "itertools",
-            "operator",
-            "math",
-            "random",
-            "string",
-            "io",
-            "contextlib",
-            "typing",
-            "dataclasses",
-            "abc",
-            "copy",
-            "time",
-            "warnings",
-            "inspect",
-            "importlib",
-            "weakref",
-            "gc",
-            "atexit",
-            "signal",
-            "threading",
-            "multiprocessing",
-            "queue",
-            "sqlite3",
-            "csv",
-            "xml",
-            "html",
-            "email",
-            "base64",
-            "hashlib",
-            "hmac",
-            "secrets",
-            "ssl",
-            "socket",
-            "gzip",
-            "tarfile",
-            "zipfile",
-            "configparser",
-            "argparse",
-            "unittest",
-            "ast",
-            "traceback",
-        }
-
-        # Try to detect more modules by checking if they're in stdlib directory
-        stdlib_modules = set(core_stdlib)
-
-        # Additional modules we can detect by checking their origin
-        candidate_modules = [
-            "ftplib",
-            "doctest",
-            "pdb",
-            "cProfile",
-            "profile",
-            "trace",
-            "getopt",
-            "smtplib",
-            "poplib",
-            "imaplib",
-            "nntplib",
-            "telnetlib",
-            "uuid",
-            "decimal",
-            "fractions",
-            "statistics",
-            "cmath",
-            "platform",
-            "getpass",
-            "locale",
-        ]
-
-        for module_name in candidate_modules:
-            if self._is_stdlib_module(module_name, stdlib_path):
+        # 1. Scan for .py files in stdlib directory
+        for py_file in stdlib_path.glob("*.py"):
+            module_name = py_file.stem
+            if not module_name.startswith("_"):  # Skip private modules
                 stdlib_modules.add(module_name)
 
-        return stdlib_modules
+        # 2. Scan for packages (directories with __init__.py)
+        for item in stdlib_path.iterdir():
+            if item.is_dir() and (item / "__init__.py").exists():
+                module_name = item.name
+                if not module_name.startswith("_"):  # Skip private modules
+                    stdlib_modules.add(module_name)
 
-    def _is_stdlib_module(self, module_name: str, stdlib_path: str) -> bool:
-        """Check if a module is part of the standard library."""
-        try:
-            import importlib.util
+        # 3. Add built-in modules that don't have files
+        import sys
 
-            spec = importlib.util.find_spec(module_name)
-            if spec is None or spec.origin is None:
-                return False
+        builtin_modules = set(sys.builtin_module_names)
+        stdlib_modules.update(builtin_modules)
 
-            # Built-in modules are stdlib
-            if spec.origin == "built-in":
-                return True
+        # 4. Verify each module by checking if it's actually in stdlib
+        verified_modules = set()
+        for module_name in stdlib_modules:
+            try:
+                spec = importlib.util.find_spec(module_name)
+                if spec is None:
+                    continue
 
-            # Check if module is in stdlib directory
-            return spec.origin.startswith(stdlib_path)
-        except Exception:
-            return False
+                # Built-in modules are definitely stdlib
+                if spec.origin == "built-in" or spec.origin == "frozen":
+                    verified_modules.add(module_name)
+                # Check if origin is in stdlib directory
+                elif spec.origin and spec.origin.startswith(str(stdlib_path)):
+                    verified_modules.add(module_name)
+            except Exception:
+                # If we can't verify, skip it
+                continue
+
+        return verified_modules
 
     def is_stdlib_module(self, module_name: str) -> bool:
         """
