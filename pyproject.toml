@@ -3,47 +3,26 @@ name = "mlflow-dep-analyzer"
 version = "0.1.0"
 description = "Smart dependency analysis and minimal requirements generation for MLflow models"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Andrew Gross"}
 ]
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
-keywords = ["mlflow", "dependencies", "requirements", "analysis", "machine-learning"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-]
 requires-python = ">=3.8"
-urls.homepage = "https://github.com/your-username/mlflow-dep-analyzer"
-urls.repository = "https://github.com/your-username/mlflow-dep-analyzer"
-urls.documentation = "https://github.com/your-username/mlflow-dep-analyzer#readme"
-urls.issues = "https://github.com/your-username/mlflow-dep-analyzer/issues"
-
 dependencies = [
-    # Core dependencies - minimal and focused
-    "mlflow>=2.0.0",  # Core MLflow dependency
+    "mlflow>=2.0.0"
 ]
 
-# Optional dependencies for enhanced functionality
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     # Development and testing
     "mlflow[gateway]>=2.0.0",
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-xdist>=3.0.0",
+    "pytest==7.4.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-xdist==3.3.1",
+    "pre-commit>=3.0.0",
+    "ruff>=0.7.0",
+    "isort>=5.12.0",
     "mypy>=1.0.0",
+    "pyspark==3.5.4",
     "types-setuptools",
     "scikit-learn>=1.0.0",
     "pandas>=1.3.0",
@@ -60,16 +39,6 @@ where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
-
-[dependency-groups]
-dev = [
-  "pytest==7.4.0",
-  "pytest-asyncio==0.21.1",
-  "pytest-xdist==3.3.1",
-  "pre-commit>=3.0.0",
-  "ruff>=0.7.0",
-  "isort>=5.12.0",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -22,12 +22,7 @@ test-examples:
 	uv run pytest examples/tests/ -v
 
 test-src:
-	@echo "Running src tests..."
-	@if [ -d "src" ] && [ -d "tests" ]; then \
-		uv run pytest tests/ -v; \
-	else \
-		echo "No src tests found yet"; \
-	fi
+	uv run pytest tests/ -v
 
 test-reset: clean test
 

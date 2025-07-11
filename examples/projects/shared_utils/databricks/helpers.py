@@ -4,8 +4,7 @@ from typing import Any
 
 import mlflow
 import pandas as pd
-
-from ..constants import (
+from projects.shared_utils.constants import (
     MAX_PROCESSING_TIME_SECONDS,
     NEGATIVE_LABEL,
     NEGATIVE_THRESHOLD,
@@ -13,8 +12,8 @@ from ..constants import (
     POSITIVE_LABEL,
     POSITIVE_THRESHOLD,
 )
-from ..text_utils import clean_text, extract_features, validate_text_length
-from ..validation import sanitize_input, validate_model_config, validate_model_input
+from projects.shared_utils.text_utils import clean_text, extract_features, validate_text_length
+from projects.shared_utils.validation import sanitize_input, validate_model_config, validate_model_input
 
 logger = logging.getLogger(__name__)
 

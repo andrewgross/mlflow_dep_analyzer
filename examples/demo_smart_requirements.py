@@ -94,7 +94,7 @@ def demo_smart_requirements():
             print(f"Model URI: {model_uri}")
             print("\nGenerated minimal requirements.txt contains only:")
 
-            # Use our new package analyzer to show what was analyzed
+            # Use our mlflow_dep_analyzer library to show what was analyzed
             from mlflow_dep_analyzer import analyze_code_dependencies
 
             # Load base requirements to show the filtering effect
