@@ -30,6 +30,25 @@ class TestModelIndependence:
         model.train(texts, labels)
         run_id = model.run_id
 
+        # Verify the run exists before trying to load the model
+        import mlflow
+
+        client = mlflow.tracking.MlflowClient()
+
+        # Wait for run to be available
+        import time
+
+        max_retries = 10
+        for i in range(max_retries):
+            try:
+                client.get_run(run_id)
+                break
+            except Exception:
+                if i < max_retries - 1:
+                    time.sleep(0.5)
+                else:
+                    raise
+
         # Use inference pipeline (which is part of repo) to load model
         pipeline = SentimentInferencePipeline()
         model_uri = f"runs:/{run_id}/auto_sentiment_model"
@@ -202,14 +221,18 @@ class TestModelIndependence:
         """Test that all model artifacts are self-contained and independent."""
         texts, labels = sample_data
 
-        # Train model with complex preprocessing
+        # Train model with complex preprocessing - need enough samples for stratified split
         complex_texts = [
             "AMAZING product!!! https://example.com",
             "terrible quality :( very disappointed",
             "Great service & fast delivery!!",
             "Poor support... not recommended",
+            "Fantastic experience, love it!",
+            "Worst product ever, terrible",
+            "Outstanding quality and service",
+            "Complete waste of money",
         ]
-        complex_labels = [1, 0, 1, 0]
+        complex_labels = [1, 0, 1, 0, 1, 0, 1, 0]
 
         model = AutoLoggingSentimentModel(experiment_name="test_artifacts_independence", dry_run=False)
 

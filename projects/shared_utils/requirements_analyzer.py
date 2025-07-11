@@ -212,41 +212,44 @@ class RequirementsAnalyzer:
         return all_imports
 
     def filter_external_packages(self, imports: set[str]) -> set[str]:
-        """Filter out stdlib modules and local modules, keeping only external packages."""
+        """Filter out stdlib modules and local modules using MLflow-style approach."""
         external = set()
 
-        # Common local module patterns to exclude
-        local_patterns = {
-            "projects",
-            "shared_utils",
-            "text_utils",
-            "validation",
-            "constants",
-            "databricks",
-            "my_model",
-            "inference",
+        # MLflow-style filtering rules
+        excluded_patterns = {
+            # Skip private/internal modules (MLflow approach)
+            lambda m: m.startswith("_"),
+            # Skip empty or relative imports
+            lambda m: not m or m.startswith("."),
+            # Skip known local patterns
+            lambda m: m.startswith("projects"),
+            lambda m: m.startswith("shared_utils"),
+            lambda m: m.startswith("text_utils"),
+            lambda m: m.startswith("validation"),
+            lambda m: m.startswith("constants"),
+            lambda m: m.startswith("databricks") and not self._is_external_databricks(m),
+            lambda m: m.startswith("my_model"),
+            lambda m: m.startswith("inference"),
         }
 
         for module in imports:
-            # Skip stdlib modules
+            # Apply MLflow-style filtering
+            if any(pattern(module) for pattern in excluded_patterns):
+                continue
+
+            # Apply stdlib filtering (fallback for AST analysis)
             if module in self.stdlib_modules:
-                continue
-
-            # Skip relative imports and special cases
-            if module.startswith(".") or not module:
-                continue
-
-            # Skip known local modules
-            if module in local_patterns:
-                continue
-
-            # Skip modules that start with local patterns
-            if any(module.startswith(pattern + ".") for pattern in local_patterns):
                 continue
 
             external.add(module)
 
         return external
+
+    def _is_external_databricks(self, module: str) -> bool:
+        """Check if a databricks module is external (like databricks-sdk)."""
+        # External databricks packages that should be included
+        external_databricks = {"databricks.sdk", "databricks.cli", "databricks.connect"}
+        return any(module.startswith(ext) for ext in external_databricks)
 
     def resolve_package_names(self, imports: set[str]) -> set[str]:
         """Resolve import names to actual package names using MLflow-style approach."""
@@ -256,7 +259,30 @@ class RequirementsAnalyzer:
             resolved_packages = self._resolve_single_import(import_name)
             packages.update(resolved_packages)
 
+        # Apply MLflow-style post-filtering
+        packages = self._apply_mlflow_style_filtering(packages)
         return packages
+
+    def _apply_mlflow_style_filtering(self, packages: set[str]) -> set[str]:
+        """Apply MLflow-style package filtering after resolution."""
+        # MLflow excludes these packages
+        mlflow_excluded = {
+            "setuptools",
+            "pip",
+            "wheel",
+            "distutils",
+            "pkg-resources",  # Often a false positive
+        }
+
+        # Also exclude MLflow itself and variants
+        mlflow_packages = self._modules_to_packages.get("mlflow", [])
+        mlflow_excluded.update(mlflow_packages)
+        mlflow_excluded.update(["mlflow-skinny", "mlflow"])
+
+        # Filter out excluded packages
+        filtered = {pkg for pkg in packages if pkg.lower() not in {p.lower() for p in mlflow_excluded}}
+
+        return filtered
 
     def _resolve_single_import(self, import_name: str) -> list[str]:
         """Resolve a single import name to package names."""
@@ -506,6 +532,42 @@ def load_requirements_from_file(requirements_file: str) -> list[str]:
                 requirements.append(line)
 
     return requirements
+
+
+def analyze_code_paths_mlflow_style(imports: set[str]) -> list[str]:
+    """
+    Analyze imports using MLflow's exact approach.
+
+    This demonstrates how MLflow would handle the same input.
+    MLflow's key insight: Only modules that appear in importlib_metadata
+    are real packages that need to be installed.
+    """
+    try:
+        from importlib.metadata import packages_distributions
+
+        modules_to_packages = packages_distributions()
+    except ImportError:
+        # Fallback for older Python
+        modules_to_packages = {}
+
+    # MLflow's core logic: Convert modules to packages
+    packages = []
+    for module in imports:
+        # Skip private modules (MLflow approach)
+        if module.startswith("_"):
+            continue
+
+        # Get packages for this module (empty list if not found)
+        module_packages = modules_to_packages.get(module, [])
+        packages.extend(module_packages)
+
+    # MLflow's exclusion list
+    excluded = {"setuptools", "mlflow", "mlflow-skinny", "pip", "wheel"}
+
+    # Filter and deduplicate
+    result = sorted(set(packages) - excluded)
+
+    return result
 
 
 def analyze_code_paths(
