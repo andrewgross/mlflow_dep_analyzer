@@ -29,12 +29,11 @@ test-src:
 		echo "No src tests found yet"; \
 	fi
 
-lint:
-	uv run pre-commit run --all-files
+test-reset: clean test
 
 format:
-	uv run ruff format .
-	uv run isort .
+	uv run pre-commit run --all-files
+
 
 build:
 	@echo "Building package..."
@@ -44,11 +43,11 @@ build:
 clean:
 	@echo "Cleaning up..."
 	rm -rf __pycache__/ .pytest_cache/
-	rm -rf mlruns/ mlflow_runs/
-	rm -f sentiment_pipeline.pkl mlflow_server.*
 	rm -rf category_indexer/
-	rm -rf dist/ build/ src/mlflow_dep_analyzer.egg-info/
+	rm -rf dist/ build/
 	find . -name "*.pyc" -delete
+	find . -name "*.pkl" -delete
+	find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "Done!"
 
