@@ -1,0 +1,21 @@
+artifact_path: auto_sentiment_model
+flavors:
+  python_function:
+    artifacts:
+      pipeline:
+        path: artifacts/auto_sentiment_pipeline.pkl
+        uri: auto_sentiment_pipeline.pkl
+    cloudpickle_version: 2.2.1
+    code: code
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pyfunc.model
+    python_model: python_model.pkl
+    python_version: 3.11.11
+    streamable: false
+mlflow_version: 2.19.0
+model_size_bytes: 6317
+model_uuid: 4597486620a341a6b9bbbc65bb47b65e
+run_id: e74d479a917c4efdbeb514dad7e70698
+utc_time_created: '2025-07-10 21:03:38.464022'
