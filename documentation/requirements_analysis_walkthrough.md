@@ -4,6 +4,32 @@
 
 This document explains our hybrid approach to automatically determining the minimal set of Python packages needed to run MLflow models in production. As a junior engineer, you'll learn about dependency analysis, package resolution, and how we combine safety with accuracy to solve a critical production problem.
 
+## Updated Project Structure
+
+This project has been restructured for better organization:
+
+```
+├── examples/                          # Example implementations and demos
+│   ├── projects/                      # Example model projects
+│   │   ├── my_model/                 # Sentiment analysis model example
+│   │   │   ├── auto_logging_sentiment_model.py
+│   │   │   └── sentiment_model.py
+│   │   ├── shared_utils/             # Example utilities and helpers
+│   │   │   ├── mlflow_hybrid_analyzer.py  # Legacy analyzer (examples)
+│   │   │   └── base_model.py
+│   │   └── inference/                # Inference pipeline examples
+│   ├── tests/                        # Tests for example implementations
+│   ├── notebooks/                    # Jupyter notebooks for demos
+│   └── demo_smart_requirements.py    # Standalone demo script
+├── src/                              # Reusable library components
+│   └── mlflow_code_analysis/         # Main library package
+│       ├── requirements_analyzer.py   # Core requirements analysis
+│       └── code_path_analyzer.py     # Code path discovery
+├── tests/                            # Tests for src library
+├── documentation/                    # Technical documentation
+└── Makefile                          # Build and test commands
+```
+
 ## The Problem: Dependency Hell in ML Models
 
 When you save an ML model with MLflow, you need to know which Python packages are required to load and use that model later. Too many packages create bloated environments and security risks. Too few packages cause runtime failures. The challenge is finding the **exact minimal set** needed.
@@ -13,7 +39,7 @@ When you save an ML model with MLflow, you need to know which Python packages ar
 Consider this simple sentiment model:
 
 ```python
-# projects/my_model/auto_logging_sentiment_model.py
+# examples/projects/my_model/auto_logging_sentiment_model.py
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -64,7 +90,7 @@ We developed a **hybrid approach** that combines:
 Instead of executing code (dangerous!), we parse the Python syntax tree to find all import statements:
 
 ```python
-# projects/shared_utils/mlflow_hybrid_analyzer.py
+# src/mlflow_code_analysis/requirements_analyzer.py
 import ast
 
 def analyze_file(self, file_path: str) -> set[str]:
@@ -88,7 +114,7 @@ def analyze_file(self, file_path: str) -> set[str]:
 ```python
 {
     'sklearn', 'pandas', 'mlflow', 'datetime', 'os', 'sys',
-    'projects', 'tempfile', 'importlib', 'traceback', ...
+    'examples', 'tempfile', 'importlib', 'traceback', ...
 }
 ```
 
@@ -117,8 +143,8 @@ stdlib_modules = {
 
 ### Local Project Modules
 ```python
-# projects/shared_utils/mlflow_hybrid_analyzer.py
-def _should_exclude_module(self, module: str, repo_name: str = "") -> bool:
+# src/mlflow_code_analysis/requirements_analyzer.py
+def _should_exclude_module(self, module: str, local_patterns: set[str]) -> bool:
     """Determine if a module should be excluded using MLflow-style rules."""
 
     # MLflow excludes private modules
@@ -127,8 +153,8 @@ def _should_exclude_module(self, module: str, repo_name: str = "") -> bool:
 
     # Skip known local patterns
     local_patterns = {
-        "projects", "shared_utils", "text_utils",
-        "validation", "constants", "my_model", "inference"
+        "examples", "projects", "shared_utils", "text_utils",
+        "validation", "constants", "my_model", "inference", "src"
     }
 
     if module in local_patterns:
@@ -139,7 +165,7 @@ def _should_exclude_module(self, module: str, repo_name: str = "") -> bool:
 
 **After filtering our example**:
 ```python
-# Before: {'sklearn', 'pandas', 'mlflow', 'datetime', 'os', 'projects', ...}
+# Before: {'sklearn', 'pandas', 'mlflow', 'datetime', 'os', 'examples', ...}
 # After:  {'sklearn', 'pandas', 'mlflow'}  # Only external packages!
 ```
 
@@ -163,7 +189,7 @@ Now comes the tricky part: converting module names to package names.
 MLflow has solved this in production through `importlib.metadata`:
 
 ```python
-# projects/shared_utils/mlflow_hybrid_analyzer.py
+# src/mlflow_code_analysis/requirements_analyzer.py
 from mlflow.utils.requirements_utils import _MODULES_TO_PACKAGES
 
 def resolve_packages_mlflow_style(self, modules: set[str]) -> set[str]:
@@ -206,7 +232,7 @@ When you install `scikit-learn`, pip automatically installs:
 **MLflow's Answer**: No! Only specify top-level packages. Let pip handle the rest.
 
 ```python
-# projects/shared_utils/mlflow_hybrid_analyzer.py
+# src/mlflow_code_analysis/requirements_analyzer.py
 def prune_dependencies_mlflow_style(self, packages: set[str]) -> set[str]:
     """Apply MLflow's dependency pruning logic."""
     try:
@@ -243,7 +269,7 @@ scikit-learn==1.3.0
 For reproducibility, we pin to specific versions:
 
 ```python
-# projects/shared_utils/mlflow_hybrid_analyzer.py
+# src/mlflow_code_analysis/requirements_analyzer.py
 def generate_pinned_requirements(self, packages: set[str]) -> list[str]:
     """Generate pinned requirements using MLflow's utilities."""
     requirements = []
@@ -271,19 +297,85 @@ def validate_against_pypi(self, packages: set[str]) -> tuple[set[str], set[str]]
     return recognized, unrecognized
 ```
 
+## Using the Reusable Library
+
+### Core Library Components
+
+The `src/mlflow_code_analysis/` package provides two main analyzers:
+
+#### 1. HybridRequirementsAnalyzer
+
+```python
+# Import the library
+from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+# Initialize analyzer
+analyzer = HybridRequirementsAnalyzer(
+    existing_requirements=["mlflow>=2.0.0", "pandas>=1.3.0"]
+)
+
+# Analyze requirements
+result = analyzer.analyze_model_requirements(
+    code_paths=["examples/projects/my_model/"],
+    repo_root="/path/to/repo",
+    exclude_existing=True
+)
+
+print(result["requirements"])  # ['scikit-learn==1.3.0']
+```
+
+#### 2. CodePathAnalyzer
+
+```python
+# Import the library
+from src.mlflow_code_analysis import CodePathAnalyzer
+
+# Initialize analyzer
+analyzer = CodePathAnalyzer(repo_root="/path/to/repo")
+
+# Find code paths needed for model
+result = analyzer.analyze_code_paths(
+    entry_files=["examples/projects/my_model/auto_logging_sentiment_model.py"]
+)
+
+print(result["relative_paths"])  # ['examples/projects/my_model/auto_logging_sentiment_model.py', ...]
+```
+
+### Convenience Functions
+
+For simple use cases, use the convenience functions:
+
+```python
+# Analyze dependencies
+from src.mlflow_code_analysis import analyze_code_dependencies
+
+requirements = analyze_code_dependencies(
+    code_paths=["examples/projects/my_model/"],
+    existing_requirements_file="requirements.txt"
+)
+
+# Analyze code paths
+from src.mlflow_code_analysis import analyze_code_paths
+
+code_paths = analyze_code_paths(
+    entry_files=["examples/projects/my_model/auto_logging_sentiment_model.py"],
+    repo_root="/path/to/repo"
+)
+```
+
 ## Complete Workflow Example
 
-Let's trace through our sentiment model:
+Let's trace through our sentiment model using the new structure:
 
 ### Input: Model Code
 ```python
-# projects/my_model/auto_logging_sentiment_model.py
+# examples/projects/my_model/auto_logging_sentiment_model.py
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 import pandas as pd
 import mlflow
-from projects.shared_utils.base_model import BaseModelV3
+from ..shared_utils.base_model import BaseModelV3
 ```
 
 ### Step-by-Step Analysis
@@ -291,7 +383,7 @@ from projects.shared_utils.base_model import BaseModelV3
 ```python
 # Step 1: AST discovers all imports
 raw_imports = {
-    'sklearn', 'pandas', 'mlflow', 'projects', 'datetime', 'os',
+    'sklearn', 'pandas', 'mlflow', 'examples', 'datetime', 'os',
     'sys', 'tempfile', 'importlib', 'traceback', 'joblib'
 }
 
@@ -328,24 +420,25 @@ Our model that imports 10+ modules only needs **1 additional package** beyond th
 
 ## Code Integration Example
 
-Here's how this integrates into our auto-logging model:
+Here's how this integrates into our auto-logging model using the new library:
 
 ```python
-# projects/my_model/auto_logging_sentiment_model.py
+# examples/projects/my_model/auto_logging_sentiment_model.py
 def _generate_and_log_requirements(self):
     """Generate smart requirements.txt for model dependencies."""
-    from ..shared_utils.mlflow_hybrid_analyzer import MLflowHybridAnalyzer
+    # Import from the reusable library
+    from src.mlflow_code_analysis import HybridRequirementsAnalyzer
 
     # Get base requirements from project
-    base_requirements = load_requirements_from_file("requirements.txt")
+    base_requirements = self._load_base_requirements()
 
     # Initialize hybrid analyzer
-    analyzer = MLflowHybridAnalyzer(existing_requirements=base_requirements)
+    analyzer = HybridRequirementsAnalyzer(existing_requirements=base_requirements)
 
     # Analyze model dependencies
     result = analyzer.analyze_model_requirements(
-        code_paths=[__file__, "shared_utils/"],
-        repo_root=repo_root,
+        code_paths=[__file__, "../shared_utils/"],
+        repo_root=self.repo_root,
         exclude_existing=True
     )
 
@@ -357,6 +450,43 @@ def _generate_and_log_requirements(self):
                      else ", ".join(requirements))
 
     return requirements
+```
+
+## Running Tests
+
+The project includes comprehensive tests for both the library and examples:
+
+```bash
+# Test the core library
+make test-src
+# OR: uv run pytest tests/ -v
+
+# Test the examples
+make test-examples
+# OR: uv run pytest examples/tests/ -v
+
+# Test everything
+make test
+```
+
+## Development Workflow
+
+### Adding New Functionality
+
+1. **Core logic** goes in `src/mlflow_code_analysis/`
+2. **Examples** go in `examples/projects/`
+3. **Tests for core** go in `tests/`
+4. **Tests for examples** go in `examples/tests/`
+
+### Using the Library in Your Projects
+
+```python
+# Option 1: Direct import (if src/ is in your path)
+from src.mlflow_code_analysis import HybridRequirementsAnalyzer
+
+# Option 2: Install as package (future)
+# pip install mlflow-code-analysis
+# from mlflow_code_analysis import HybridRequirementsAnalyzer
 ```
 
 ## Key Insights for Junior Engineers
@@ -371,10 +501,10 @@ def _generate_and_log_requirements(self):
 - Use battle-tested mappings and logic where possible
 - Production systems encode years of edge case handling
 
-### 3. Layered Approach
-- Break complex problems into clear steps
-- Each step should be testable and understandable
-- Provide detailed analysis for debugging
+### 3. Layered Architecture
+- **`src/`** contains reusable, well-tested components
+- **`examples/`** shows how to use the library
+- Clear separation of concerns enables maintainability
 
 ### 4. Real-World Complexity
 - Import names ≠ package names (always!)
@@ -382,29 +512,10 @@ def _generate_and_log_requirements(self):
 - Version conflicts are common in practice
 - Local modules must be filtered correctly
 
-### 5. Optimization Mindset
-- Minimal requirements = fewer conflicts
-- Let package managers handle transitive dependencies
-- Pin versions for reproducibility
-- Measure and validate results
-
-## Testing and Validation
-
-Our hybrid analyzer includes comprehensive testing:
-
-```python
-# Test the analyzer works correctly
-analyzer = MLflowHybridAnalyzer()
-result = analyzer.analyze_model_requirements(
-    code_paths=["projects/my_model/"],
-    exclude_existing=True
-)
-
-# Verify results
-assert len(result["requirements"]) <= 5  # Should be minimal
-assert "mlflow" not in result["final_packages"]  # Should be excluded
-assert all("==" in req for req in result["requirements"])  # Should be pinned
-```
+### 5. Testing Strategy
+- Library components have focused unit tests
+- Examples have integration tests
+- Both test suites validate the complete workflow
 
 ## Performance Characteristics
 
@@ -415,16 +526,18 @@ assert all("==" in req for req in result["requirements"])  # Should be pinned
 | **Completeness** | ✅ Comprehensive | ❌ Runtime only | ✅ Comprehensive |
 | **Speed** | ✅ Fast | ❌ Slow | ✅ Fast |
 | **Production Ready** | ❌ No | ✅ Yes | ✅ Yes |
+| **Reusability** | ❌ Project-specific | ❌ MLflow-specific | ✅ Library + Examples |
 
 ## Future Improvements
 
 As you grow as an engineer, consider these enhancements:
 
-1. **Caching**: Cache PyPI index and package mappings
-2. **Parallelization**: Analyze multiple files concurrently
-3. **ML-based mapping**: Use ML to improve import→package mapping
-4. **Integration**: Hook into CI/CD for automatic requirements updates
-5. **Metrics**: Track optimization rates and accuracy over time
+1. **Package Distribution**: Publish `src/` as a proper Python package
+2. **Caching**: Cache PyPI index and package mappings
+3. **Parallelization**: Analyze multiple files concurrently
+4. **ML-based mapping**: Use ML to improve import→package mapping
+5. **Integration**: Hook into CI/CD for automatic requirements updates
+6. **Metrics**: Track optimization rates and accuracy over time
 
 ## Conclusion
 
@@ -432,7 +545,14 @@ Our hybrid requirements analyzer solves a critical production problem by combini
 - **AST safety** with **MLflow accuracy**
 - **Comprehensive discovery** with **intelligent filtering**
 - **Automatic optimization** with **manual control**
+- **Reusable library** with **practical examples**
+
+The restructured project provides:
+- **Clean separation** between library and examples
+- **Comprehensive testing** for both components
+- **Easy integration** into existing workflows
+- **Clear documentation** for future development
 
 The result is a system that consistently generates minimal, accurate requirements.txt files for MLflow models, enabling reliable production deployments while minimizing dependency bloat.
 
-**Key takeaway**: Good engineering often means combining the best aspects of different approaches rather than choosing just one. Our hybrid solution demonstrates this principle in action.
+**Key takeaway**: Good engineering often means combining the best aspects of different approaches rather than choosing just one. Our hybrid solution and clean architecture demonstrate this principle in action.
