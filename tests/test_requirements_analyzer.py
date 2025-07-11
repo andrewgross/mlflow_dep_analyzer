@@ -102,6 +102,58 @@ from sklearn.linear_model import LogisticRegression
         assert "arbitrary_module" not in filtered
         assert "business_logic" not in filtered
 
+    def test_stdlib_module_detection(self):
+        """Test that stdlib modules are correctly identified."""
+        analyzer = HybridRequirementsAnalyzer()
+
+        # Test core stdlib modules
+        assert analyzer.is_stdlib_module("os")
+        assert analyzer.is_stdlib_module("sys")
+        assert analyzer.is_stdlib_module("json")
+        assert analyzer.is_stdlib_module("datetime")
+        assert analyzer.is_stdlib_module("collections")
+        assert analyzer.is_stdlib_module("re")
+        assert analyzer.is_stdlib_module("pathlib")
+        assert analyzer.is_stdlib_module("ast")
+
+        # Test that third-party packages are not stdlib
+        assert not analyzer.is_stdlib_module("pandas")
+        assert not analyzer.is_stdlib_module("numpy")
+        assert not analyzer.is_stdlib_module("requests")
+        assert not analyzer.is_stdlib_module("sklearn")
+        assert not analyzer.is_stdlib_module("mlflow")
+
+        # Test edge cases
+        assert not analyzer.is_stdlib_module("nonexistent_module")
+        assert not analyzer.is_stdlib_module("pkg_resources")  # This is setuptools, not stdlib
+        assert not analyzer.is_stdlib_module("setuptools")  # Third-party package
+
+        # Test that we properly handle module names that look like stdlib
+        assert not analyzer.is_stdlib_module("os_custom")
+        assert not analyzer.is_stdlib_module("sys_utils")
+
+    def test_stdlib_filtering_in_analyze(self):
+        """Test that stdlib modules are properly filtered during analysis."""
+        analyzer = HybridRequirementsAnalyzer()
+
+        # Mock imports that include stdlib modules
+        imports = {"os", "sys", "json", "pandas", "numpy", "requests", "collections", "re"}
+
+        # Filter should remove stdlib modules
+        filtered = analyzer.filter_local_modules(imports, repo_root="/tmp/test")
+
+        # Only external packages should remain
+        assert "pandas" in filtered
+        assert "numpy" in filtered
+        assert "requests" in filtered
+
+        # Stdlib modules should be filtered out
+        assert "os" not in filtered
+        assert "sys" not in filtered
+        assert "json" not in filtered
+        assert "collections" not in filtered
+        assert "re" not in filtered
+
     def test_analyze_directory(self, tmp_path):
         """Test analyzing all Python files in a directory."""
         analyzer = HybridRequirementsAnalyzer()
@@ -146,6 +198,19 @@ sklearn>=1.0.0
     requirements = load_requirements_from_file(str(req_file))
     expected = ["pandas>=1.3.0", "numpy==1.21.0", "sklearn>=1.0.0"]
     assert requirements == expected
+
+
+def test_is_stdlib_module_convenience_function():
+    """Test the convenience function for stdlib detection."""
+    from src.mlflow_code_analysis import is_stdlib_module
+
+    # Test that the convenience function works the same as the method
+    assert is_stdlib_module("os")
+    assert is_stdlib_module("json")
+    assert is_stdlib_module("datetime")
+    assert not is_stdlib_module("pandas")
+    assert not is_stdlib_module("numpy")
+    assert not is_stdlib_module("nonexistent_module")
 
 
 def test_load_requirements_nonexistent_file():

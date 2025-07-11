@@ -78,17 +78,25 @@ class HybridRequirementsAnalyzer:
         self._stdlib_modules = self._get_stdlib_modules()
 
     def _get_stdlib_modules(self) -> set[str]:
-        """Get stdlib modules for fallback filtering."""
-        try:
-            import sys
+        """Get stdlib modules using official Python methods."""
+        import sys
 
-            if hasattr(sys, "stdlib_module_names"):
-                return set(sys.stdlib_module_names)
-        except Exception:
-            pass
+        # Python 3.10+ has the official stdlib_module_names
+        if hasattr(sys, "stdlib_module_names"):
+            return set(sys.stdlib_module_names)
 
-        # Minimal stdlib list for fallback
-        return {
+        # For older Python versions, use importlib-based detection
+        return self._detect_stdlib_modules_importlib()
+
+    def _detect_stdlib_modules_importlib(self) -> set[str]:
+        """Detect stdlib modules using importlib for Python < 3.10."""
+        import os
+
+        # Get Python's stdlib directory
+        stdlib_path = os.path.dirname(os.__file__)
+
+        # Common stdlib modules for fallback (much smaller, core-only list)
+        core_stdlib = {
             "os",
             "sys",
             "datetime",
@@ -138,25 +146,81 @@ class HybridRequirementsAnalyzer:
             "secrets",
             "ssl",
             "socket",
-            "ftplib",
             "gzip",
             "tarfile",
             "zipfile",
             "configparser",
             "argparse",
-            "getopt",
             "unittest",
+            "ast",
+            "traceback",
+        }
+
+        # Try to detect more modules by checking if they're in stdlib directory
+        stdlib_modules = set(core_stdlib)
+
+        # Additional modules we can detect by checking their origin
+        candidate_modules = [
+            "ftplib",
             "doctest",
             "pdb",
             "cProfile",
             "profile",
             "trace",
-            "ast",
-            "pkg_resources",
-            "setuptools",
-            "distutils",
-            "traceback",
-        }
+            "getopt",
+            "smtplib",
+            "poplib",
+            "imaplib",
+            "nntplib",
+            "telnetlib",
+            "uuid",
+            "decimal",
+            "fractions",
+            "statistics",
+            "cmath",
+            "platform",
+            "getpass",
+            "locale",
+        ]
+
+        for module_name in candidate_modules:
+            if self._is_stdlib_module(module_name, stdlib_path):
+                stdlib_modules.add(module_name)
+
+        return stdlib_modules
+
+    def _is_stdlib_module(self, module_name: str, stdlib_path: str) -> bool:
+        """Check if a module is part of the standard library."""
+        try:
+            import importlib.util
+
+            spec = importlib.util.find_spec(module_name)
+            if spec is None or spec.origin is None:
+                return False
+
+            # Built-in modules are stdlib
+            if spec.origin == "built-in":
+                return True
+
+            # Check if module is in stdlib directory
+            return spec.origin.startswith(stdlib_path)
+        except Exception:
+            return False
+
+    def is_stdlib_module(self, module_name: str) -> bool:
+        """
+        Check if a module is part of the Python standard library.
+
+        This is a public method that can be used by other code to check
+        if a module is part of the standard library.
+
+        Args:
+            module_name: The name of the module to check
+
+        Returns:
+            True if the module is part of the standard library, False otherwise
+        """
+        return module_name in self._stdlib_modules
 
     def analyze_file(self, file_path: str) -> set[str]:
         """Extract all imports from a Python file using AST."""
@@ -538,3 +602,20 @@ def analyze_code_dependencies(
         code_paths=code_paths, repo_root=repo_root, exclude_existing=exclude_existing, local_patterns=local_patterns
     )
     return result["requirements"]
+
+
+def is_stdlib_module(module_name: str) -> bool:
+    """
+    Check if a module is part of the Python standard library.
+
+    This is a convenience function that creates a temporary analyzer
+    to check if a module is part of the standard library.
+
+    Args:
+        module_name: The name of the module to check
+
+    Returns:
+        True if the module is part of the standard library, False otherwise
+    """
+    analyzer = HybridRequirementsAnalyzer()
+    return analyzer.is_stdlib_module(module_name)
