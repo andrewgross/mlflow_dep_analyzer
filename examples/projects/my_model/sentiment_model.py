@@ -1,13 +1,12 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-
 from projects.shared_utils.base_model import BaseModelV3
 from projects.shared_utils.databricks.helpers import (
     postprocess_predictions,
     preprocess_text_data,
     save_model_with_metadata,
 )
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 
 
 class SentimentModel(BaseModelV3):
