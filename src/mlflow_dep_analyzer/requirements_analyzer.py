@@ -332,7 +332,10 @@ class HybridRequirementsAnalyzer:
                 self._pypi_index = _load_pypi_package_index()
 
             # Split into recognized and unrecognized packages
-            recognized = packages & self._pypi_index.package_names
+            if self._pypi_index is not None:
+                recognized: set[str] = packages & self._pypi_index.package_names
+            else:
+                recognized = set()
             unrecognized = packages - recognized
 
             # MLflow allows certain special packages

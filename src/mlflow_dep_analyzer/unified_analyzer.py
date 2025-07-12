@@ -223,36 +223,6 @@ class UnifiedDependencyAnalyzer:
         if top_level in self._stdlib_modules:
             return ModuleInfo(module_name, DependencyType.STDLIB_MODULE)
 
-        # PRIORITY CHECK: If it's a well-known external package, classify it as such
-        # even if there might be a local file with the same name
-        common_external = {
-            "numpy",
-            "pandas",
-            "sklearn",
-            "scipy",
-            "matplotlib",
-            "seaborn",
-            "torch",
-            "tensorflow",
-            "keras",
-            "joblib",
-            "requests",
-            "flask",
-            "django",
-            "fastapi",
-            "click",
-            "pydantic",
-            "pytest",
-            "setuptools",
-            "wheel",
-            "pip",
-            "pkg_resources",
-            "distutils",
-            "mlflow",
-        }
-        if top_level in common_external:
-            return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE)
-
         # Try to import the module and use inspect to get its path
         original_path = sys.path.copy()
         try:
