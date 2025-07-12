@@ -71,6 +71,7 @@ import external_package
         # Create test project structure
         projects_dir = tmp_path / "projects"
         projects_dir.mkdir()
+        (projects_dir / "__init__.py").touch()
 
         model_file = projects_dir / "model.py"
         model_file.write_text("""
@@ -94,6 +95,20 @@ from projects.utils import helper
         assert str(model_file) in result["required_files"]
         assert str(utils_file) in result["required_files"]
 
+        # Verify we have exactly the expected number of files
+        assert (
+            len(result["required_files"]) == 2
+        ), f"Expected 2 files, got {len(result['required_files'])}: {result['required_files']}"
+
+        # Verify relative paths are correct
+        relative_paths = result["relative_paths"]
+        assert any("projects/model.py" in path for path in relative_paths)
+        assert any("projects/utils.py" in path for path in relative_paths)
+
+        # Verify analysis metrics
+        assert result["analysis"]["total_files"] == 2
+        assert result["analysis"]["total_dependencies"] >= 1
+
 
 def test_analyze_code_paths_convenience(tmp_path):
     """Test convenience function for code path analysis."""
@@ -109,27 +124,176 @@ def test_analyze_code_paths_convenience(tmp_path):
 
 def test_find_model_code_paths(tmp_path):
     """Test finding code paths for a single model."""
-    # Create test model with local imports
+    # Test case 1: Model with no local dependencies
     model_file = tmp_path / "sentiment_model.py"
     model_file.write_text("""
+import pandas
+import numpy
+""")
+
+    paths = find_model_code_paths(str(model_file), str(tmp_path))
+    assert isinstance(paths, list)
+    # Entry file is always included, even with no local imports
+    assert len(paths) == 1, f"Expected 1 path (entry file), got {len(paths)}: {paths}"
+    assert any("sentiment_model.py" in path for path in paths), f"Entry file not found in paths: {paths}"
+
+    # Test case 2: Model with local dependency
+    utils_file = tmp_path / "utils.py"
+    utils_file.write_text("def helper(): pass")
+
+    model_with_local = tmp_path / "model_with_local.py"
+    model_with_local.write_text("""
 import pandas
 from utils import helper
 """)
 
-    # Create local dependency
-    utils_file = tmp_path / "utils.py"
-    utils_file.write_text("def helper(): pass")
+    paths_with_local = find_model_code_paths(str(model_with_local), str(tmp_path))
+    assert isinstance(paths_with_local, list)
 
-    paths = find_model_code_paths(str(model_file), str(tmp_path))
+    # Should find both the model file and its dependency
+    assert len(paths_with_local) == 2, f"Expected 2 paths, got {len(paths_with_local)}: {paths_with_local}"
 
-    assert isinstance(paths, list)
-    # Should at least return the model file itself since it exists
-    # Note: Even without local imports, the entry file should be included
-    # But our current implementation only includes files with local dependencies
-    # This is actually correct behavior - if there are no local imports,
-    # code_paths isn't needed
-    if len(paths) > 0:
-        assert any("sentiment_model.py" in path for path in paths)
-    else:
-        # This is acceptable - no local dependencies means no code_paths needed
-        assert True
+    # Check that the model file is included
+    assert any(
+        "model_with_local.py" in path for path in paths_with_local
+    ), f"Model file not found in paths: {paths_with_local}"
+
+    # Should also include the utils dependency
+    assert any("utils.py" in path for path in paths_with_local), f"Utils file not found in paths: {paths_with_local}"
+
+
+def test_deep_recursive_dependency_collection(tmp_path):
+    """Test that all files in a deep dependency chain are collected.
+
+    This test would have caught the original bug where only immediate
+    dependencies were being collected, not all files in the dependency tree.
+    """
+    analyzer = CodePathAnalyzer(str(tmp_path))
+
+    # Create a complex dependency chain: model.py -> utils.py -> helpers.py -> base.py
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+
+    # Level 1: Entry file
+    model_file = projects_dir / "model.py"
+    model_file.write_text("""
+import pandas as pd
+from projects.utils import process_data
+""")
+
+    # Level 2: First dependency
+    utils_file = projects_dir / "utils.py"
+    utils_file.write_text("""
+import numpy as np
+from projects.helpers import transform_data
+
+def process_data(data):
+    return transform_data(data)
+""")
+
+    # Level 3: Second dependency
+    helpers_file = projects_dir / "helpers.py"
+    helpers_file.write_text("""
+from projects.base import BaseTransformer
+
+def transform_data(data):
+    transformer = BaseTransformer()
+    return transformer.transform(data)
+""")
+
+    # Level 4: Deepest dependency
+    base_file = projects_dir / "base.py"
+    base_file.write_text("""
+class BaseTransformer:
+    def transform(self, data):
+        return data
+""")
+
+    # Also create __init__.py files to make it a proper package
+    (projects_dir / "__init__.py").touch()
+
+    # Analyze the dependency chain
+    result = analyzer.analyze_code_paths([str(model_file)])
+
+    # Verify structure
+    assert "entry_files" in result
+    assert "required_files" in result
+    assert "relative_paths" in result
+    assert "dependencies" in result
+
+    # Critical test: ALL files in the dependency chain should be in required_files
+    required_files = result["required_files"]
+
+    # Check that all 4 files are present
+    assert str(model_file) in required_files, "Entry file should be in required_files"
+    assert str(utils_file) in required_files, "First dependency should be in required_files"
+    assert str(helpers_file) in required_files, "Second dependency should be in required_files"
+    assert str(base_file) in required_files, "Deepest dependency should be in required_files"
+
+    # Should have exactly 4 files (no duplicates)
+    assert len(required_files) == 4, f"Expected 4 files, got {len(required_files)}: {required_files}"
+
+    # Check relative paths contain all files
+    relative_paths = result["relative_paths"]
+    assert any("projects/model.py" in path for path in relative_paths)
+    assert any("projects/utils.py" in path for path in relative_paths)
+    assert any("projects/helpers.py" in path for path in relative_paths)
+    assert any("projects/base.py" in path for path in relative_paths)
+
+    # Verify the dependency chain is properly tracked
+    dependencies = result["dependencies"]
+    assert str(model_file) in dependencies
+
+    # Check that the recursive collection worked
+    model_deps = dependencies[str(model_file)]
+    assert len(model_deps) == 4  # All 4 files should be in the dependency collection
+
+
+def test_multiple_entry_files_with_shared_dependencies(tmp_path):
+    """Test that shared dependencies are not duplicated when analyzing multiple entry files."""
+    analyzer = CodePathAnalyzer(str(tmp_path))
+
+    # Create shared dependency
+    shared_file = tmp_path / "shared.py"
+    shared_file.write_text("def shared_function(): pass")
+
+    # Create first entry file that uses shared
+    entry1_file = tmp_path / "entry1.py"
+    entry1_file.write_text("from shared import shared_function")
+
+    # Create second entry file that also uses shared
+    entry2_file = tmp_path / "entry2.py"
+    entry2_file.write_text("from shared import shared_function")
+
+    # Analyze both entry files
+    result = analyzer.analyze_code_paths([str(entry1_file), str(entry2_file)])
+
+    # Should have all 3 files but no duplicates
+    required_files = result["required_files"]
+    assert len(required_files) == 3, f"Expected 3 unique files, got {len(required_files)}: {required_files}"
+
+    # All files should be present
+    assert str(entry1_file) in required_files
+    assert str(entry2_file) in required_files
+    assert str(shared_file) in required_files
+
+
+def test_circular_dependency_handling(tmp_path):
+    """Test that circular dependencies don't cause infinite loops."""
+    analyzer = CodePathAnalyzer(str(tmp_path))
+
+    # Create circular dependency: a.py imports b.py, b.py imports a.py
+    file_a = tmp_path / "a.py"
+    file_a.write_text("from b import func_b")
+
+    file_b = tmp_path / "b.py"
+    file_b.write_text("from a import func_a")
+
+    # This should not hang or crash
+    result = analyzer.analyze_code_paths([str(file_a)])
+
+    # Should collect both files
+    required_files = result["required_files"]
+    assert str(file_a) in required_files
+    assert str(file_b) in required_files
+    assert len(required_files) == 2

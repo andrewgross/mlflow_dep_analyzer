@@ -125,7 +125,9 @@ class CodePathAnalyzer:
             Dictionary mapping file paths to their local imports
         """
         dependencies = {}
-        to_process = {entry_file}
+        # Convert entry_file to absolute path for consistency
+        entry_file_abs = str(Path(entry_file).resolve())
+        to_process = {entry_file_abs}
         processed = set()
 
         while to_process:
@@ -229,8 +231,9 @@ class CodePathAnalyzer:
             file_deps = self.collect_dependencies(entry_file)
             all_dependencies[entry_file] = file_deps
 
-            # Add all discovered files
-            all_required_files.add(entry_file)
+            # Add all discovered files - both from the dependency keys and the resolved file paths
+            all_required_files.update(file_deps.keys())  # All files that were analyzed
+            # Also add any additional files discovered through module resolution
             for deps in file_deps.values():
                 for dep_files in [self._module_to_file_paths(dep) for dep in deps]:
                     all_required_files.update(dep_files)
@@ -353,5 +356,5 @@ def find_model_code_paths(model_file: str, repo_root: str | None = None) -> list
     return analyze_code_paths(
         entry_files=[model_file],
         repo_root=repo_root,
-        exclude_patterns=["**/__pycache__/**", "**/.git/**", "**/.*", "**/tests/**", "**/test_*.py"],
+        exclude_patterns=["**/__pycache__/**", "**/.git/**", "**/tests/**", "test_*.py"],
     )
