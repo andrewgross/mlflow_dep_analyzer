@@ -9,7 +9,10 @@ only necessary code is bundled with the model artifact.
 """
 
 import ast
+import importlib
+import inspect
 import os
+import sys
 from pathlib import Path
 
 
@@ -61,15 +64,75 @@ class CodePathAnalyzer:
                     if self._is_local_import(module_name, repo_name):
                         local_imports.add(module_name)
             elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    # Relative imports (. or ..)
-                    if node.level > 0:
-                        local_imports.add(node.module or "")
+                # Handle relative imports (. or ..)
+                if node.level > 0:
+                    # This is a relative import, we need to resolve it based on the file's location
+                    if node.module:
+                        # from .module import something
+                        relative_module = self._resolve_relative_import(file_path, node.level, node.module)
+                        if relative_module and self._is_local_import(relative_module, repo_name):
+                            local_imports.add(relative_module)
+                    else:
+                        # from . import something - need to handle each imported name
+                        base_module = self._resolve_relative_import(file_path, node.level, None)
+                        if base_module is not None:
+                            for alias in node.names:
+                                if base_module:
+                                    full_module = f"{base_module}.{alias.name}"
+                                else:
+                                    full_module = alias.name
+                                if self._is_local_import(full_module, repo_name):
+                                    local_imports.add(full_module)
+                elif node.module:
                     # Absolute imports that start with repo name or known local patterns
-                    elif self._is_local_import(node.module, repo_name):
+                    if self._is_local_import(node.module, repo_name):
                         local_imports.add(node.module)
 
         return local_imports
+
+    def _resolve_relative_import(self, file_path: str, level: int, module: str | None) -> str | None:
+        """Resolve a relative import to an absolute module name."""
+        try:
+            file_obj = Path(file_path).resolve()  # Resolve symlinks consistently
+
+            # Start from the file's directory
+            current_dir = file_obj.parent
+
+            # For level 1 (single dot), we stay in the current directory
+            # For level 2 (double dot), we go up one directory, etc.
+            for _ in range(level - 1):
+                if current_dir == self.repo_root or current_dir == current_dir.parent:
+                    return None  # Can't go up further
+                current_dir = current_dir.parent
+
+            # Convert directory path back to module path
+            try:
+                relative_to_root = current_dir.relative_to(self.repo_root)
+                if relative_to_root == Path("."):
+                    # We're at the repo root
+                    package_parts = []
+                else:
+                    package_parts = list(relative_to_root.parts)
+
+                # Handle src/ directory specially
+                if package_parts and package_parts[0] == "src":
+                    package_parts = package_parts[1:]
+
+                # Add the module name if provided
+                if module:
+                    package_parts.append(module)
+
+                if package_parts:
+                    return ".".join(package_parts)
+                else:
+                    return module or ""
+
+            except ValueError:
+                # File is outside repo root
+                return None
+
+        except Exception:
+            return None
 
     def _is_local_import(self, module_name: str, repo_name: str) -> bool:
         """Check if a module name represents a local import using dynamic detection."""
@@ -140,6 +203,12 @@ class CodePathAnalyzer:
             imports = self.analyze_file(current)
             dependencies[current] = imports
 
+            # Also add the current file's own package __init__.py files
+            current_package_inits = self._get_package_init_files(current)
+            for init_file in current_package_inits:
+                if init_file not in processed:
+                    to_process.add(init_file)
+
             # Find corresponding files for imports
             for imp in imports:
                 # Convert module path to file paths
@@ -152,50 +221,148 @@ class CodePathAnalyzer:
 
     def _module_to_file_paths(self, module_name: str) -> list[str]:
         """
-        Convert a module name to potential file paths.
+        Convert a module name to file paths using proper module resolution.
 
         Args:
             module_name: Python module name (e.g., "projects.my_model.sentiment")
 
         Returns:
-            List of potential file paths that could contain this module
+            List of file paths that contain this module
         """
         if not module_name:
             return []
 
         paths = []
 
+        # First try manual resolution to avoid import errors
+        manual_paths = self._manual_module_resolution(module_name)
+        if manual_paths:
+            paths.extend(manual_paths)
+
+        # Then try inspect-based resolution if manual didn't find anything or to complement it
+        if not paths or True:  # Always try inspect to get additional info
+            # Add the repo root to sys.path temporarily to enable proper module resolution
+            repo_root_str = str(self.repo_root)
+            src_path = str(self.repo_root / "src")
+
+            original_path = sys.path.copy()
+            paths_to_add = [repo_root_str]
+            if (self.repo_root / "src").exists():
+                paths_to_add.append(src_path)
+
+            try:
+                # Add our paths to the beginning of sys.path
+                for path in reversed(paths_to_add):
+                    if path not in sys.path:
+                        sys.path.insert(0, path)
+
+                # Try to import the module and get its file path
+                try:
+                    module = importlib.import_module(module_name)
+
+                    # Use inspect to get the source file
+                    try:
+                        source_file = inspect.getsourcefile(module)
+                        if source_file and self._is_file_in_repo(source_file):
+                            if source_file not in paths:
+                                paths.append(source_file)
+                    except (TypeError, OSError):
+                        pass
+
+                    # Also try __file__ attribute
+                    try:
+                        if hasattr(module, "__file__") and module.__file__:
+                            file_path = str(Path(module.__file__).resolve())
+                            if self._is_file_in_repo(file_path):
+                                if file_path not in paths:
+                                    paths.append(file_path)
+                    except (AttributeError, OSError):
+                        pass
+
+                except (ImportError, SyntaxError, ValueError):
+                    # Import failed, rely on manual resolution
+                    pass
+
+            finally:
+                # Restore original sys.path
+                sys.path[:] = original_path
+
+        return list(set(paths))  # Remove duplicates
+
+    def _is_file_in_repo(self, file_path: str) -> bool:
+        """Check if a file path is within the repository."""
+        try:
+            resolved_path = Path(file_path).resolve()
+            return str(resolved_path).startswith(str(self.repo_root))
+        except (OSError, ValueError):
+            return False
+
+    def _manual_module_resolution(self, module_name: str) -> list[str]:
+        """Fallback manual resolution when importlib fails."""
+        paths = []
+
         # Convert dots to path separators
         module_path = module_name.replace(".", "/")
 
-        # Try as a package (directory with __init__.py)
-        package_init = self.repo_root / module_path / "__init__.py"
-        if package_init.exists():
-            paths.append(str(package_init))
+        # Search in common Python package locations
+        search_locations = [
+            self.repo_root,
+            self.repo_root / "src",
+            self.repo_root / "lib",
+            self.repo_root / "packages",
+        ]
 
-        # Try as a direct .py file
-        module_file = self.repo_root / (module_path + ".py")
-        if module_file.exists():
-            paths.append(str(module_file))
+        for base_dir in search_locations:
+            if not base_dir.exists():
+                continue
 
-        # Try relative to different base directories
-        for base_dir in ["", "src", "examples"]:
-            if base_dir:
-                base_path = self.repo_root / base_dir / module_path
-            else:
-                base_path = self.repo_root / module_path
-
-            # Check for package
-            package_init = base_path / "__init__.py"
-            if package_init.exists() and str(package_init) not in paths:
+            # Try as a package (directory with __init__.py)
+            package_dir = base_dir / module_path
+            package_init = package_dir / "__init__.py"
+            if package_init.exists():
                 paths.append(str(package_init))
 
-            # Check for module file
-            module_file = Path(str(base_path) + ".py")
-            if module_file.exists() and str(module_file) not in paths:
+                # Also add intermediate __init__.py files in the package hierarchy
+                parts = module_name.split(".")
+                current_path = base_dir
+                for part in parts:
+                    current_path = current_path / part
+                    init_file = current_path / "__init__.py"
+                    if init_file.exists() and str(init_file) not in paths:
+                        paths.append(str(init_file))
+
+            # Try as a direct .py file
+            module_file = base_dir / (module_path + ".py")
+            if module_file.exists():
                 paths.append(str(module_file))
 
+                # Also add intermediate __init__.py files for the module's package
+                if "." in module_name:
+                    parts = module_name.split(".")[:-1]  # Exclude the module name itself
+                    current_path = base_dir
+                    for part in parts:
+                        current_path = current_path / part
+                        init_file = current_path / "__init__.py"
+                        if init_file.exists() and str(init_file) not in paths:
+                            paths.append(str(init_file))
+
         return paths
+
+    def _get_package_init_files(self, file_path: str) -> list[str]:
+        """Get all __init__.py files for the package hierarchy of a given file."""
+        init_files = []
+        file_obj = Path(file_path)
+
+        # Start from the file's directory and walk up to repo root
+        current_dir = file_obj.parent
+
+        while current_dir != self.repo_root and current_dir != current_dir.parent:
+            init_file = current_dir / "__init__.py"
+            if init_file.exists():
+                init_files.append(str(init_file))
+            current_dir = current_dir.parent
+
+        return init_files
 
     def analyze_code_paths(
         self,
@@ -220,7 +387,7 @@ class CodePathAnalyzer:
             exclude_patterns = ["**/__pycache__/**", "**/.git/**"]
 
         all_dependencies = {}
-        all_required_files = set()
+        all_required_files: set[str] = set()
 
         # Analyze each entry file
         for entry_file in entry_files:
