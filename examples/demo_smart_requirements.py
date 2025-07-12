@@ -95,7 +95,7 @@ def demo_smart_requirements():
             print("\nGenerated minimal requirements.txt contains only:")
 
             # Use our mlflow_dep_analyzer library to show what was analyzed
-            from mlflow_dep_analyzer import analyze_code_dependencies
+            from mlflow_dep_analyzer import get_model_requirements
 
             # Load base requirements to show the filtering effect
             base_requirements = []
@@ -106,15 +106,10 @@ def demo_smart_requirements():
             # Analyze the model file and shared utilities
             current_file = os.path.abspath(model.__class__.__module__.replace(".", "/") + ".py")
 
-            # Generate requirements excluding base packages
-            requirements = analyze_code_dependencies(
-                code_paths=[current_file],
-                repo_root=".",
-                existing_requirements=base_requirements,
-                exclude_existing=True,
-            )
+            # Generate requirements for the current model file
+            requirements = get_model_requirements(current_file, ".")
 
-            print(f"Base requirements.txt excludes {len(base_requirements)} packages:")
+            print(f"Base requirements.txt has {len(base_requirements)} packages")
 
             print(f"\n📦 Additional packages needed: {len(requirements)}")
             if requirements:

@@ -70,24 +70,23 @@ with mlflow.start_run():
 
 ## 📚 API Reference
 
-### Unified Analyzer (Recommended)
+The MLflow Dependency Analyzer provides a simple, unified interface for dependency analysis:
 
-The `UnifiedDependencyAnalyzer` provides complete analysis in a single operation:
+### Main Interface
 
 ```python
-from mlflow_dep_analyzer import UnifiedDependencyAnalyzer, analyze_model_dependencies
+from mlflow_dep_analyzer import analyze_model_dependencies
 
-# Class-based usage
-analyzer = UnifiedDependencyAnalyzer(repo_root=".")
-result = analyzer.analyze_dependencies(["model.py", "utils.py"])
-
-# Function-based usage (recommended for simple cases)
+# Analyze a single model file
 result = analyze_model_dependencies("model.py")
+
+# Analyze with explicit repo root
+result = analyze_model_dependencies("model.py", repo_root="/path/to/project")
 
 # Result structure
 {
-    "requirements": ["pandas", "scikit-learn"],  # External packages
-    "code_paths": ["model.py", "utils.py"],      # Local files
+    "requirements": ["pandas", "scikit-learn"],  # External packages to install
+    "code_paths": ["model.py", "utils.py"],      # Local files to include
     "analysis": {
         "total_modules": 15,
         "external_packages": 2,
@@ -97,65 +96,52 @@ result = analyze_model_dependencies("model.py")
 }
 ```
 
-### Specialized Analyzers
+### Class-Based Interface
 
-For advanced use cases, use the specialized analyzers:
+For advanced use cases or multiple analyses:
 
 ```python
-from mlflow_dep_analyzer import CodePathAnalyzer, HybridRequirementsAnalyzer
+from mlflow_dep_analyzer import UnifiedDependencyAnalyzer
 
-# Find only local file dependencies
-code_analyzer = CodePathAnalyzer(repo_root=".")
-code_paths = code_analyzer.analyze_code_paths(["model.py"])
+# Create analyzer instance
+analyzer = UnifiedDependencyAnalyzer(repo_root=".")
 
-# Find only external package dependencies
-req_analyzer = HybridRequirementsAnalyzer(repo_root=".")
-requirements = req_analyzer.analyze(["model.py"])
+# Analyze multiple entry points
+result = analyzer.analyze_dependencies(["model.py", "train.py", "utils.py"])
 ```
 
 ### Convenience Functions
 
 ```python
-from mlflow_dep_analyzer import (
-    get_model_requirements,
-    get_model_code_paths,
-    analyze_code_dependencies,
-    find_model_code_paths
-)
+from mlflow_dep_analyzer import get_model_requirements, get_model_code_paths
 
-# Get just the requirements
+# Get just the requirements list
 packages = get_model_requirements("model.py")
+# Returns: ["pandas", "scikit-learn", "numpy"]
 
-# Get just the code paths
+# Get just the code paths list
 files = get_model_code_paths("model.py")
-
-# Legacy functions (still supported)
-requirements = analyze_code_dependencies(["model.py"], repo_root=".")
-code_paths = find_model_code_paths("model.py")
+# Returns: ["model.py", "utils.py", "preprocessing.py"]
 ```
 
 ## 🏗️ Architecture
 
-The library provides three specialized analyzers:
+The library uses a single, unified analyzer that provides complete dependency analysis:
 
 ```
-┌─────────────────────────┐
-│  UnifiedDependencyAnalyzer │  ← Recommended for most use cases
-│  (Complete Analysis)       │
-└─────────────────────────┘
-           │
-           ├─── Uses inspect + importlib for module resolution
-           ├─── Classifies: external packages | stdlib | local files
-           └─── Returns unified result
-
-┌─────────────────────────┐  ┌─────────────────────────┐
-│   CodePathAnalyzer      │  │ HybridRequirementsAnalyzer │
-│   (Local Files)         │  │ (External Packages)       │
-└─────────────────────────┘  └─────────────────────────┘
-           │                            │
-           ├─── AST-based discovery     ├─── MLflow integration
-           ├─── Recursive traversal     ├─── PyPI validation
-           └─── Package structure       └─── Smart filtering
+┌─────────────────────────────┐
+│   UnifiedDependencyAnalyzer │
+│    (Complete Analysis)      │
+└─────────────────────────────┘
+                │
+                ├─── AST parsing (safe import discovery)
+                ├─── importlib.import_module() (dynamic imports)
+                ├─── inspect.getsourcefile() (accurate file paths)
+                ├─── Smart classification:
+                │    ├─── Standard library → ignored
+                │    ├─── External packages → requirements
+                │    └─── Local files → code_paths + recursive analysis
+                └─── MLflow-compatible output
 ```
 
 ## 🔍 How It Works
@@ -189,22 +175,20 @@ print(f"External packages: {result['analysis']['external_packages']}")
 print(f"Local files: {result['analysis']['local_files']}")
 ```
 
-### Custom Package Detection
+### Advanced Analysis
 
 ```python
-from mlflow_dep_analyzer import HybridRequirementsAnalyzer
+from mlflow_dep_analyzer import UnifiedDependencyAnalyzer
 
-# Use specialized analyzer with custom configuration
-analyzer = HybridRequirementsAnalyzer(
-    repo_root=".",
-    use_mlflow_mapping=True,  # Use MLflow's package mapping
-    exclude_dev_deps=True     # Exclude development dependencies
-)
+# Get detailed analysis results
+analyzer = UnifiedDependencyAnalyzer(repo_root=".")
+result = analyzer.analyze_dependencies(["model.py"])
 
-requirements = analyzer.analyze(
-    code_paths=["model.py"],
-    existing_requirements=["numpy>=1.20.0"]  # Exclude already-specified packages
-)
+# Access detailed metrics
+print(f"Total modules found: {result['analysis']['total_modules']}")
+print(f"External packages: {result['analysis']['external_packages']}")
+print(f"Local files: {result['analysis']['local_files']}")
+print(f"Standard library modules: {result['analysis']['stdlib_modules']}")
 ```
 
 ### Error Handling
@@ -224,9 +208,9 @@ except ImportError as e:
 
 See the [examples/](examples/) directory for complete working examples:
 
-- **[Basic Usage](examples/demo_smart_requirements.py)**: Simple model analysis
+- **[Basic Usage](examples/demo_smart_requirements.py)**: Complete MLflow integration demo
 - **[MLflow Integration](examples/projects/)**: Real-world MLflow projects
-- **[Complex Projects](examples/projects/my_model/)**: Multi-file analysis
+- **[Complex Projects](examples/projects/my_model/)**: Multi-file analysis with auto-logging
 
 ## 🛠️ Development
 
