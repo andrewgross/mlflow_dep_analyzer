@@ -1,6 +1,6 @@
 [project]
 name = "mlflow-dep-analyzer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Smart dependency analysis and minimal requirements generation for MLflow models"
 authors = [
     { name = "Andrew Gross"}
