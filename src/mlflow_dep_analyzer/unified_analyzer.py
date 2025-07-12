@@ -299,7 +299,8 @@ class UnifiedDependencyAnalyzer:
     def _setup_import_paths(self) -> None:
         """Add repository paths to sys.path for local module resolution."""
         repo_paths = [str(self.repo_root)]
-        for subdir in ["src", "examples", "lib", "packages"]:
+        # Common Python project directory patterns
+        for subdir in ["src", "lib", "packages"]:
             if (self.repo_root / subdir).exists():
                 repo_paths.append(str(self.repo_root / subdir))
 
@@ -485,8 +486,8 @@ class UnifiedDependencyAnalyzer:
         # Try to detect stdlib modules from filesystem
         stdlib_modules.update(self._detect_stdlib_from_filesystem())
 
-        # Add common stdlib modules as fallback
-        stdlib_modules.update(self._get_common_stdlib_modules())
+        # Add stdlib modules using sys.stdlib_module_names or fallback
+        stdlib_modules.update(self._get_stdlib_module_names())
 
         return stdlib_modules
 
@@ -511,8 +512,16 @@ class UnifiedDependencyAnalyzer:
 
         return stdlib_modules
 
-    def _get_common_stdlib_modules(self) -> set[str]:
-        """Get a curated list of common Python standard library modules."""
+    def _get_stdlib_module_names(self) -> set[str]:
+        """Get Python standard library module names using sys.stdlib_module_names (Python 3.10+)."""
+        try:
+            # Use sys.stdlib_module_names if available (Python 3.10+)
+            if hasattr(sys, "stdlib_module_names"):
+                return set(sys.stdlib_module_names)
+        except Exception:
+            pass
+
+        # Fallback for older Python versions - use a minimal essential set
         return {
             "os",
             "sys",
@@ -525,98 +534,40 @@ class UnifiedDependencyAnalyzer:
             "functools",
             "operator",
             "typing",
-            "dataclasses",
             "datetime",
             "time",
             "random",
             "math",
-            "statistics",
             "re",
             "string",
             "io",
             "pickle",
             "csv",
-            "configparser",
             "logging",
-            "unittest",
             "threading",
-            "multiprocessing",
             "subprocess",
             "shutil",
             "tempfile",
             "glob",
-            "fnmatch",
             "hashlib",
-            "hmac",
-            "secrets",
             "uuid",
             "base64",
-            "binascii",
             "struct",
             "codecs",
-            "textwrap",
-            "unicodedata",
             "argparse",
-            "getopt",
             "copy",
-            "pprint",
-            "reprlib",
             "enum",
             "contextlib",
             "abc",
-            "atexit",
             "traceback",
             "warnings",
-            "keyword",
-            "gc",
             "inspect",
-            "site",
             "importlib",
-            "pkgutil",
-            "modulefinder",
-            "runpy",
             "ast",
-            "symtable",
-            "symbol",
-            "token",
-            "tokenize",
-            "py_compile",
-            "compileall",
-            "dis",
-            "pickletools",
             "platform",
-            "ctypes",
-            "winreg",
-            "msilib",
-            "msvcrt",
-            "winsound",
-            "posix",
-            "pwd",
-            "spwd",
-            "grp",
-            "crypt",
-            "termios",
-            "tty",
-            "pty",
-            "fcntl",
-            "pipes",
-            "resource",
-            "nis",
-            "syslog",
-            "optparse",
-            "getpass",
-            "curses",
-            "locale",
-            "gettext",
-            "ssl",
             "socket",
-            "select",
-            "selectors",
             "asyncio",
             "signal",
-            "mmap",
-            "readline",
-            "rlcompleter",
         }
 
     def _is_likely_stdlib(self, module) -> bool:
@@ -649,11 +600,10 @@ class UnifiedDependencyAnalyzer:
         # Convert module name to potential file paths
         module_path = module_name.replace(".", "/")
 
-        # Search in common locations
+        # Search in common Python project directory patterns
         search_locations = [
             self.repo_root,
             self.repo_root / "src",
-            self.repo_root / "examples",
             self.repo_root / "lib",
             self.repo_root / "packages",
         ]

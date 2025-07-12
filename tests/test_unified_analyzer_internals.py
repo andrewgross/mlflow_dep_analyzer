@@ -26,19 +26,26 @@ class TestUnifiedDependencyAnalyzerInternals:
         # Some modules might be detected, others might not depending on Python installation
         # Just verify it doesn't crash and returns reasonable results
 
-    def test_get_common_stdlib_modules(self, tmp_path):
-        """Test that common stdlib modules are correctly identified."""
+    def test_get_stdlib_module_names(self, tmp_path):
+        """Test that stdlib module names are correctly retrieved."""
         analyzer = UnifiedDependencyAnalyzer(str(tmp_path))
 
-        common_modules = analyzer._get_common_stdlib_modules()
+        stdlib_modules = analyzer._get_stdlib_module_names()
 
         # Check some known stdlib modules are included
         expected_modules = {"os", "sys", "json", "datetime", "pathlib", "collections"}
-        assert expected_modules.issubset(common_modules)
+        assert expected_modules.issubset(stdlib_modules)
 
         # Should be a reasonable number of modules
-        assert len(common_modules) > 50
-        assert len(common_modules) < 200
+        assert len(stdlib_modules) > 40
+
+        # If Python 3.10+, should use sys.stdlib_module_names
+        if hasattr(sys, "stdlib_module_names"):
+            # Should have many more modules from the official list
+            assert len(stdlib_modules) > 200
+        else:
+            # Fallback should have essential modules only
+            assert len(stdlib_modules) < 100
 
     def test_is_stdlib_module(self, tmp_path):
         """Test stdlib module identification."""
@@ -104,9 +111,9 @@ class TestUnifiedDependencyAnalyzerInternals:
         """Test that import paths are correctly set up."""
         analyzer = UnifiedDependencyAnalyzer(str(tmp_path))
 
-        # Create some directories
+        # Create some directories (using common Python project patterns)
         (tmp_path / "src").mkdir()
-        (tmp_path / "examples").mkdir()
+        (tmp_path / "lib").mkdir()
 
         original_path = sys.path.copy()
         try:
@@ -115,7 +122,7 @@ class TestUnifiedDependencyAnalyzerInternals:
             # Should have added repo paths to sys.path
             assert str(tmp_path) in sys.path
             assert str(tmp_path / "src") in sys.path
-            assert str(tmp_path / "examples") in sys.path
+            assert str(tmp_path / "lib") in sys.path
 
         finally:
             sys.path[:] = original_path
