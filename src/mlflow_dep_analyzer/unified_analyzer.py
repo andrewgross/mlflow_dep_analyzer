@@ -76,30 +76,53 @@ class UnifiedDependencyAnalyzer:
         processed_files: set[str] = set()
 
         # Process all entry files
+        self._process_entry_files(entry_files, all_modules, processed_files)
+
+        # Separate modules by type
+        external_packages, local_files = self._categorize_modules(all_modules)
+
+        # Convert local files to relative paths
+        relative_code_paths = self._convert_to_relative_paths(local_files)
+
+        # Build final result
+        return self._build_analysis_result(entry_files, all_modules, external_packages, relative_code_paths)
+
+    def _process_entry_files(
+        self, entry_files: list[str], all_modules: dict[str, ModuleInfo], processed_files: set[str]
+    ) -> None:
+        """Process all entry files and discover their dependencies."""
         for entry_file in entry_files:
             if not os.path.exists(entry_file):
                 print(f"Warning: Entry file does not exist: {entry_file}")
                 continue
-
             self._discover_dependencies_recursive(entry_file, all_modules, processed_files)
 
-        # Separate into different categories
+    def _categorize_modules(self, all_modules: dict[str, ModuleInfo]) -> tuple[set[str], set[str]]:
+        """Categorize modules into external packages and local files."""
         external_packages = set()
         local_files = set()
 
         for module_info in all_modules.values():
             if module_info.dep_type == DependencyType.EXTERNAL_PACKAGE:
-                # Extract top-level package name for requirements
-                package_name = module_info.name.split(".")[0]
-                # Filter out empty or problematic package names
-                if package_name and package_name not in {"", "_", "__", "test", "tests"}:
+                package_name = self._extract_package_name(module_info.name)
+                if package_name:
                     external_packages.add(package_name)
             elif module_info.dep_type == DependencyType.LOCAL_FILE and module_info.file_path:
-                # Double-check that the file is actually in the repo
                 if self._is_file_in_repo(module_info.file_path):
                     local_files.add(module_info.file_path)
 
-        # Convert to relative paths for MLflow
+        return external_packages, local_files
+
+    def _extract_package_name(self, module_name: str) -> str | None:
+        """Extract top-level package name from module name."""
+        package_name = module_name.split(".")[0]
+        # Filter out empty or problematic package names
+        if package_name and package_name not in {"", "_", "__", "test", "tests"}:
+            return package_name
+        return None
+
+    def _convert_to_relative_paths(self, local_files: set[str]) -> list[str]:
+        """Convert absolute file paths to relative paths for MLflow."""
         relative_code_paths = []
         for file_path in local_files:
             try:
@@ -109,14 +132,23 @@ class UnifiedDependencyAnalyzer:
             except ValueError:
                 # Path is on different drive (Windows)
                 pass
+        return relative_code_paths
 
+    def _build_analysis_result(
+        self,
+        entry_files: list[str],
+        all_modules: dict[str, ModuleInfo],
+        external_packages: set[str],
+        relative_code_paths: list[str],
+    ) -> dict:
+        """Build the final analysis result dictionary."""
         return {
             "requirements": sorted(external_packages),
             "code_paths": sorted(relative_code_paths),
             "analysis": {
                 "total_modules": len(all_modules),
                 "external_packages": len(external_packages),
-                "local_files": len(local_files),
+                "local_files": len([m for m in all_modules.values() if m.dep_type == DependencyType.LOCAL_FILE]),
                 "stdlib_modules": len([m for m in all_modules.values() if m.dep_type == DependencyType.STDLIB_MODULE]),
                 "entry_files": entry_files,
             },
@@ -173,40 +205,55 @@ class UnifiedDependencyAnalyzer:
             Set of imported module names
         """
         try:
-            with open(file_path, encoding="utf-8") as f:
-                tree = ast.parse(f.read())
+            tree = self._parse_python_file(file_path)
         except Exception as e:
             print(f"Warning: Could not parse {file_path}: {e}")
             return set()
 
-        imports = set()
-
+        imports: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imports.add(alias.name)
+                self._process_import_node(node, imports)
             elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    if node.level > 0:
-                        # Relative import - resolve to absolute
-                        abs_module = self._resolve_relative_import(file_path, node.level, node.module)
-                        if abs_module:
-                            imports.add(abs_module)
-                    else:
-                        # Absolute import
-                        imports.add(node.module)
-                elif node.level > 0:
-                    # Relative import without module (from . import name)
-                    base_module = self._resolve_relative_import(file_path, node.level, None)
-                    if base_module is not None:
-                        for alias in node.names:
-                            if base_module:
-                                full_module = f"{base_module}.{alias.name}"
-                            else:
-                                full_module = alias.name
-                            imports.add(full_module)
+                self._process_import_from_node(node, file_path, imports)
 
         return imports
+
+    def _parse_python_file(self, file_path: str) -> ast.AST:
+        """Parse a Python file and return its AST."""
+        with open(file_path, encoding="utf-8") as f:
+            return ast.parse(f.read())
+
+    def _process_import_node(self, node: ast.Import, imports: set[str]) -> None:
+        """Process a regular import node (import module)."""
+        for alias in node.names:
+            imports.add(alias.name)
+
+    def _process_import_from_node(self, node: ast.ImportFrom, file_path: str, imports: set[str]) -> None:
+        """Process an import-from node (from module import name)."""
+        if node.module:
+            if node.level > 0:
+                # Relative import - resolve to absolute
+                abs_module = self._resolve_relative_import(file_path, node.level, node.module)
+                if abs_module:
+                    imports.add(abs_module)
+            else:
+                # Absolute import
+                imports.add(node.module)
+        elif node.level > 0:
+            # Relative import without module (from . import name)
+            self._process_relative_import_without_module(node, file_path, imports)
+
+    def _process_relative_import_without_module(self, node: ast.ImportFrom, file_path: str, imports: set[str]) -> None:
+        """Process relative imports without explicit module (from . import name)."""
+        base_module = self._resolve_relative_import(file_path, node.level, None)
+        if base_module is not None:
+            for alias in node.names:
+                if base_module:
+                    full_module = f"{base_module}.{alias.name}"
+                else:
+                    full_module = alias.name
+                imports.add(full_module)
 
     def _classify_and_resolve_module(self, module_name: str) -> ModuleInfo | None:
         """
@@ -219,78 +266,95 @@ class UnifiedDependencyAnalyzer:
             ModuleInfo object or None if module cannot be resolved
         """
         # Check if it's a stdlib module first (fast check)
-        top_level = module_name.split(".")[0]
-        if top_level in self._stdlib_modules:
+        if self._is_stdlib_module(module_name):
             return ModuleInfo(module_name, DependencyType.STDLIB_MODULE)
 
-        # Try to import the module and use inspect to get its path
+        # Try to import and classify the module
+        return self._import_and_classify_module(module_name)
+
+    def _is_stdlib_module(self, module_name: str) -> bool:
+        """Check if a module is part of the standard library."""
+        top_level = module_name.split(".")[0]
+        return top_level in self._stdlib_modules
+
+    def _import_and_classify_module(self, module_name: str) -> ModuleInfo | None:
+        """Import a module and classify it based on its file path."""
         original_path = sys.path.copy()
         try:
-            # Add repo paths to sys.path for local module resolution
-            repo_paths = [str(self.repo_root)]
-            for subdir in ["src", "examples", "lib", "packages"]:
-                if (self.repo_root / subdir).exists():
-                    repo_paths.append(str(self.repo_root / subdir))
-
-            for path in reversed(repo_paths):
-                if path not in sys.path:
-                    sys.path.insert(0, path)
+            self._setup_import_paths()
 
             try:
-                # Skip modules with problematic names that could cause import issues
-                if "." in module_name and any(
-                    problematic in module_name for problematic in [".venv", "site-packages", "..", "__pycache__"]
-                ):
+                if self._is_problematic_module_name(module_name):
                     raise ImportError(f"Skipping problematic module path: {module_name}")
 
                 module = importlib.import_module(module_name)
-
-                # Use inspect to get the file path
-                file_path = None
-                try:
-                    file_path = inspect.getsourcefile(module)
-                except (TypeError, OSError):
-                    # Fallback to __file__ attribute
-                    if hasattr(module, "__file__") and module.__file__:
-                        file_path = str(Path(module.__file__).resolve())
-
-                if file_path:
-                    # Check if the imported module's file is in the current repo context
-                    # If not, check if we can find a local version in the current repo
-                    if self._is_file_in_repo(file_path):
-                        return ModuleInfo(module_name, DependencyType.LOCAL_FILE, file_path)
-                    else:
-                        # The imported module might be cached from a different context
-                        # Check if there's a local version in the current repo
-                        local_path = self._find_local_module_path(module_name)
-                        if local_path:
-                            return ModuleInfo(module_name, DependencyType.LOCAL_FILE, local_path)
-                        else:
-                            return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE, file_path)
-                else:
-                    # No file path available (built-in module, etc.)
-                    # Check if it's a known stdlib module by attempting to import
-                    if self._is_likely_stdlib(module):
-                        return ModuleInfo(module_name, DependencyType.STDLIB_MODULE)
-                    else:
-                        return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE)
+                return self._classify_imported_module(module_name, module)
 
             except ImportError:
-                # Module cannot be imported - check if it exists locally
-                # before assuming it's an external package
-                if self._check_if_local_module_exists(module_name):
-                    # Find the file path manually for local modules that can't be imported
-                    local_path = self._find_local_module_path(module_name)
-                    if local_path:
-                        return ModuleInfo(module_name, DependencyType.LOCAL_FILE, local_path)
-
-                # Assume it's an external package
-                return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE)
+                return self._handle_import_error(module_name)
 
         finally:
             sys.path[:] = original_path
 
+    def _setup_import_paths(self) -> None:
+        """Add repository paths to sys.path for local module resolution."""
+        repo_paths = [str(self.repo_root)]
+        for subdir in ["src", "examples", "lib", "packages"]:
+            if (self.repo_root / subdir).exists():
+                repo_paths.append(str(self.repo_root / subdir))
+
+        for path in reversed(repo_paths):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+
+    def _is_problematic_module_name(self, module_name: str) -> bool:
+        """Check if module name contains problematic patterns."""
+        if "." not in module_name:
+            return False
+
+        problematic_patterns = [".venv", "site-packages", "..", "__pycache__"]
+        return any(pattern in module_name for pattern in problematic_patterns)
+
+    def _classify_imported_module(self, module_name: str, module) -> ModuleInfo:
+        """Classify a successfully imported module."""
+        file_path = self._get_module_file_path(module)
+
+        if file_path:
+            if self._is_file_in_repo(file_path):
+                return ModuleInfo(module_name, DependencyType.LOCAL_FILE, file_path)
+            else:
+                # Check if there's a local version in the current repo
+                local_path = self._find_local_module_path(module_name)
+                if local_path:
+                    return ModuleInfo(module_name, DependencyType.LOCAL_FILE, local_path)
+                else:
+                    return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE, file_path)
+        else:
+            # No file path available (built-in module, etc.)
+            if self._is_likely_stdlib(module):
+                return ModuleInfo(module_name, DependencyType.STDLIB_MODULE)
+            else:
+                return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE)
+
+    def _get_module_file_path(self, module) -> str | None:
+        """Get the file path of an imported module."""
+        try:
+            return inspect.getsourcefile(module)
+        except (TypeError, OSError):
+            # Fallback to __file__ attribute
+            if hasattr(module, "__file__") and module.__file__:
+                return str(Path(module.__file__).resolve())
         return None
+
+    def _handle_import_error(self, module_name: str) -> ModuleInfo | None:
+        """Handle cases where module cannot be imported."""
+        # Check if it exists locally before assuming it's an external package
+        local_path = self._find_local_module_path(module_name)
+        if local_path:
+            return ModuleInfo(module_name, DependencyType.LOCAL_FILE, local_path)
+
+        # Assume it's an external package
+        return ModuleInfo(module_name, DependencyType.EXTERNAL_PACKAGE)
 
     def _resolve_relative_import(self, file_path: str, level: int, module: str | None) -> str | None:
         """
@@ -305,40 +369,51 @@ class UnifiedDependencyAnalyzer:
             Absolute module name or None if cannot be resolved
         """
         try:
-            file_obj = Path(file_path).resolve()
-            current_dir = file_obj.parent
-
-            # Go up 'level-1' directories (level 1 = current dir)
-            for _ in range(level - 1):
-                if current_dir == self.repo_root or current_dir == current_dir.parent:
-                    return None
-                current_dir = current_dir.parent
-
-            # Convert directory path to module path
-            try:
-                relative_to_root = current_dir.relative_to(self.repo_root)
-                if relative_to_root == Path("."):
-                    package_parts = []
-                else:
-                    package_parts = list(relative_to_root.parts)
-
-                # Handle src/ directory
-                if package_parts and package_parts[0] == "src":
-                    package_parts = package_parts[1:]
-
-                # Add module name if provided
-                if module:
-                    package_parts.append(module)
-
-                if package_parts:
-                    return ".".join(package_parts)
-                else:
-                    return module or ""
-
-            except ValueError:
+            target_dir = self._calculate_target_directory(file_path, level)
+            if target_dir is None:
                 return None
 
+            return self._build_module_name_from_path(target_dir, module)
+
         except Exception:
+            return None
+
+    def _calculate_target_directory(self, file_path: str, level: int) -> Path | None:
+        """Calculate the target directory by going up the specified number of levels."""
+        file_obj = Path(file_path).resolve()
+        current_dir = file_obj.parent
+
+        # Go up 'level-1' directories (level 1 = current dir)
+        for _ in range(level - 1):
+            if current_dir == self.repo_root or current_dir == current_dir.parent:
+                return None
+            current_dir = current_dir.parent
+
+        return current_dir
+
+    def _build_module_name_from_path(self, target_dir: Path, module: str | None) -> str | None:
+        """Build a module name from a directory path and optional module name."""
+        try:
+            relative_to_root = target_dir.relative_to(self.repo_root)
+            if relative_to_root == Path("."):
+                package_parts = []
+            else:
+                package_parts = list(relative_to_root.parts)
+
+            # Handle src/ directory
+            if package_parts and package_parts[0] == "src":
+                package_parts = package_parts[1:]
+
+            # Add module name if provided
+            if module:
+                package_parts.append(module)
+
+            if package_parts:
+                return ".".join(package_parts)
+            else:
+                return module or ""
+
+        except ValueError:
             return None
 
     def _is_file_in_repo(self, file_path: str) -> bool:
@@ -402,14 +477,23 @@ class UnifiedDependencyAnalyzer:
 
     def _get_stdlib_modules(self) -> set[str]:
         """Get set of Python standard library module names."""
-        import sys
-
         stdlib_modules: set[str] = set()
 
         # Built-in modules
         stdlib_modules.update(sys.builtin_module_names)
 
-        # Standard library modules (Python 3.11+)
+        # Try to detect stdlib modules from filesystem
+        stdlib_modules.update(self._detect_stdlib_from_filesystem())
+
+        # Add common stdlib modules as fallback
+        stdlib_modules.update(self._get_common_stdlib_modules())
+
+        return stdlib_modules
+
+    def _detect_stdlib_from_filesystem(self) -> set[str]:
+        """Detect stdlib modules by scanning the Python installation directory."""
+        stdlib_modules: set[str] = set()
+
         try:
             import sysconfig
 
@@ -425,8 +509,11 @@ class UnifiedDependencyAnalyzer:
         except Exception:
             pass
 
-        # Common stdlib modules (fallback)
-        common_stdlib = {
+        return stdlib_modules
+
+    def _get_common_stdlib_modules(self) -> set[str]:
+        """Get a curated list of common Python standard library modules."""
+        return {
             "os",
             "sys",
             "json",
@@ -531,9 +618,6 @@ class UnifiedDependencyAnalyzer:
             "readline",
             "rlcompleter",
         }
-        stdlib_modules.update(common_stdlib)
-
-        return stdlib_modules
 
     def _is_likely_stdlib(self, module) -> bool:
         """Check if a module is likely from the standard library."""
