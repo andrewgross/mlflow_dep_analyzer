@@ -35,6 +35,12 @@ build:
 	uv build
 	@echo "Build complete!"
 
+publish:
+	@echo "Publishing package..."
+	uv publish
+	@echo "Publish complete!"
+
+
 clean:
 	@echo "Cleaning up..."
 	rm -rf __pycache__/ .pytest_cache/
