@@ -120,12 +120,109 @@ class UnifiedDependencyAnalyzer:
         return external_packages, local_files
 
     def _extract_package_name(self, module_name: str) -> str | None:
-        """Extract top-level package name from module name."""
-        package_name = module_name.split(".")[0]
+        """Extract top-level package name from module name and map to actual package name."""
+        import_name = module_name.split(".")[0]
         # Filter out empty or problematic package names
-        if package_name and package_name not in {"", "_", "__", "test", "tests"}:
-            return package_name
-        return None
+        if not import_name or import_name in {"", "_", "__", "test", "tests"}:
+            return None
+
+        # Map import name to actual package name
+        actual_package_name = self._map_import_to_package_name(import_name)
+        return actual_package_name
+
+    def _map_import_to_package_name(self, import_name: str) -> str | None:
+        """
+        Map an import name to the actual package name using importlib.metadata.
+
+        This handles cases where the import name differs from the package name,
+        such as 'sklearn' -> 'scikit-learn', 'cv2' -> 'opencv-python', etc.
+        """
+        try:
+            # Try to find the distribution that provides this import name
+            package_name = self._find_distribution_for_import(import_name)
+            if package_name:
+                return package_name
+
+        except Exception:
+            # Any error, continue with fallback
+            pass
+
+        # Fallback to import name if we can't determine the package name
+        return import_name
+
+    def _find_distribution_for_import(self, import_name: str) -> str | None:
+        """Find the distribution name that provides the given import name."""
+        try:
+            # Cache for performance - only build once per analyzer instance
+            if not hasattr(self, "_import_to_package_cache"):
+                self._import_to_package_cache = self._build_import_to_package_mapping()
+
+            return self._import_to_package_cache.get(import_name)
+
+        except Exception:
+            return None
+
+    def _build_import_to_package_mapping(self) -> dict[str, str]:
+        """Build a mapping from import names to package names by scanning all distributions."""
+        mapping = {}
+
+        try:
+            from importlib.metadata import distributions
+
+            for dist in distributions():
+                dist_name = dist.metadata["Name"]
+
+                # Get top-level imports for this distribution
+                top_level_imports = self._get_top_level_imports_for_dist(dist)
+
+                # Map each import to this distribution
+                for import_name in top_level_imports:
+                    # Use the first match (in case of conflicts, first wins)
+                    if import_name not in mapping:
+                        mapping[import_name] = dist_name
+
+                # Also map the package name to itself (for cases like 'requests' -> 'requests')
+                normalized_dist_name = dist_name.lower().replace("-", "_").replace(".", "_")
+                if normalized_dist_name not in mapping:
+                    mapping[normalized_dist_name] = dist_name
+
+        except Exception:
+            pass
+
+        return mapping
+
+    def _get_top_level_imports_for_dist(self, dist) -> set[str]:
+        """Get the top-level import names provided by a distribution."""
+        top_level_imports = set()
+
+        try:
+            # Method 1: Try to read top_level.txt metadata
+            try:
+                top_level_txt = dist.read_text("top_level.txt")
+                if top_level_txt:
+                    for line in top_level_txt.strip().split("\n"):
+                        if line.strip():
+                            top_level_imports.add(line.strip())
+            except Exception:
+                pass
+
+            # Method 2: If no top_level.txt, infer from files
+            if not top_level_imports and hasattr(dist, "files") and dist.files:
+                for file in dist.files:
+                    if file.suffix in (".py", ".so", ".pyd") or file.suffix == "":
+                        parts = str(file).replace("\\", "/").split("/")
+                        if parts[0] and not parts[0].endswith(".dist-info"):
+                            # Extract top-level directory/module name
+                            name = parts[0]
+                            if "." in name:
+                                name = name.split(".")[0]
+                            if name and not name.startswith("_") and name.isidentifier():
+                                top_level_imports.add(name)
+
+        except Exception:
+            pass
+
+        return top_level_imports
 
     def _get_package_version(self, package_name: str) -> str | None:
         """Get the version of an installed package."""

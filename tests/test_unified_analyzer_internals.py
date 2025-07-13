@@ -70,9 +70,9 @@ class TestUnifiedDependencyAnalyzerInternals:
         assert analyzer._extract_package_name("pandas") == "pandas"
         assert analyzer._extract_package_name("numpy") == "numpy"
 
-        # Submodules should return top-level package
+        # Submodules should return top-level package (mapped to actual package name)
         assert analyzer._extract_package_name("pandas.core.frame") == "pandas"
-        assert analyzer._extract_package_name("sklearn.linear_model") == "sklearn"
+        assert analyzer._extract_package_name("sklearn.linear_model") == "scikit-learn"
 
         # Problematic names should be filtered out
         assert analyzer._extract_package_name("") is None
@@ -285,7 +285,7 @@ def function():
         external_packages, local_files = analyzer._categorize_modules(modules)
 
         assert "pandas" in external_packages
-        assert "sklearn" in external_packages  # Top-level package
+        assert "scikit-learn" in external_packages  # sklearn mapped to scikit-learn
         assert "test" not in external_packages  # Should be filtered out
         assert "os" not in external_packages  # Stdlib module
 
@@ -313,8 +313,9 @@ def function():
         assert "analysis" in result
         assert "detailed_modules" in result
 
-        # Check contents
-        assert result["requirements"] == ["pandas"]
+        # Check contents (now includes versions)
+        assert len(result["requirements"]) == 1
+        assert result["requirements"][0].startswith("pandas==")
         assert result["code_paths"] == ["local.py", "model.py"]  # Should be sorted
 
         analysis = result["analysis"]

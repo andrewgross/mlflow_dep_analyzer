@@ -500,11 +500,12 @@ def chain_{i}_function():
 
         # Should find external dependencies from first module
         requirements = result["requirements"]
-        assert "pandas" in requirements
-        assert "numpy" in requirements
+        package_names = {req.split("==")[0] for req in requirements}
+        assert "pandas" in package_names
+        assert "numpy" in package_names
 
         # Should not include stdlib modules
-        assert "json" not in requirements
+        assert "json" not in package_names
 
         # Should include all chain modules
         code_paths = result["code_paths"]
@@ -558,8 +559,9 @@ class UnicodeProcessor:
 
         # Should find external dependencies despite Unicode content
         requirements = result["requirements"]
-        assert "pandas" in requirements
-        assert "numpy" in requirements
+        package_names = {req.split("==")[0] for req in requirements}
+        assert "pandas" in package_names
+        assert "numpy" in package_names
 
         # Should include the Unicode file
         code_paths = result["code_paths"]

@@ -171,7 +171,7 @@ def load_data():
         # Check external packages
         requirements = result["requirements"]
         assert _has_package_requirement(requirements, "numpy")
-        assert _has_package_requirement(requirements, "sklearn")
+        assert _has_package_requirement(requirements, "scikit-learn")
 
         # Check that stdlib is not in requirements
         assert not _has_package_requirement(requirements, "pathlib")
@@ -407,6 +407,101 @@ def process2():
         # Verify no duplicate paths
         assert len(code_paths) == len(set(code_paths))
 
+    def test_import_name_to_package_name_mapping(self, tmp_path):
+        """Test that import names are correctly mapped to package names."""
+        analyzer = UnifiedDependencyAnalyzer(str(tmp_path))
+
+        # Create a model file with imports that have different package names
+        model_file = tmp_path / "model.py"
+        model_file.write_text("""
+import sklearn.ensemble as ensemble
+import sklearn.linear_model
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import numpy as np
+import requests
+
+def train():
+    model = ensemble.RandomForestClassifier()
+    scaler = StandardScaler()
+    data = pd.DataFrame(np.array([[1, 2], [3, 4]]))
+    response = requests.get("http://example.com")
+    return model, scaler, data, response
+""")
+
+        result = analyzer.analyze_dependencies([str(model_file)])
+
+        # Check that sklearn is mapped to scikit-learn
+        requirements = result["requirements"]
+        package_names = {req.split("==")[0] for req in requirements}
+
+        # Should have scikit-learn, not sklearn
+        assert "scikit-learn" in package_names
+        assert "sklearn" not in package_names
+
+        # Other packages should be correctly named
+        assert "pandas" in package_names
+        assert "numpy" in package_names
+        assert "requests" in package_names
+
+        # All should have versions (since they're installed)
+        for req in requirements:
+            assert "==" in req, f"Requirement {req} should have a version"
+
+    def test_nonexistent_package_handling(self, tmp_path):
+        """Test handling of nonexistent packages."""
+        analyzer = UnifiedDependencyAnalyzer(str(tmp_path))
+
+        model_file = tmp_path / "model.py"
+        model_file.write_text("""
+import nonexistent_package
+import another_fake_package
+
+def train():
+    return "done"
+""")
+
+        result = analyzer.analyze_dependencies([str(model_file)])
+
+        # Nonexistent packages should be included but without versions
+        requirements = result["requirements"]
+        assert "nonexistent_package" in requirements
+        assert "another_fake_package" in requirements
+
+        # Should not have version numbers since they don't exist
+        for req in requirements:
+            assert req in ["nonexistent_package", "another_fake_package"]
+
+    def test_mixed_existing_and_nonexistent_packages(self, tmp_path):
+        """Test mixing existing and nonexistent packages."""
+        analyzer = UnifiedDependencyAnalyzer(str(tmp_path))
+
+        model_file = tmp_path / "model.py"
+        model_file.write_text("""
+import pandas as pd
+import nonexistent_package
+import numpy as np
+import fake_sklearn
+
+def train():
+    return pd.DataFrame(np.array([[1, 2]]))
+""")
+
+        result = analyzer.analyze_dependencies([str(model_file)])
+
+        requirements = result["requirements"]
+        versioned_reqs = {req for req in requirements if "==" in req}
+        unversioned_reqs = {req for req in requirements if "==" not in req}
+
+        # Existing packages should have versions
+        versioned_names = {req.split("==")[0] for req in versioned_reqs}
+        assert "pandas" in versioned_names
+        assert "numpy" in versioned_names
+
+        # Nonexistent packages should not have versions
+        assert "nonexistent_package" in unversioned_reqs
+        assert "fake_sklearn" in unversioned_reqs
+
 
 def test_convenience_functions(tmp_path):
     """Test convenience functions for backward compatibility."""
@@ -515,7 +610,7 @@ def calculate_accuracy(model, data):
     requirements = result["requirements"]
     # Extract package names from versioned requirements
     package_names = {req.split("==")[0] for req in requirements}
-    expected_packages = {"pandas", "numpy", "sklearn"}
+    expected_packages = {"pandas", "numpy", "scikit-learn"}
     assert expected_packages.issubset(package_names)
 
     # Check stdlib modules are NOT in requirements
