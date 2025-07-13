@@ -516,14 +516,18 @@ def train_and_log_pytorch_model():
         # Extract package names from versioned requirements
         package_names = {req.split("==")[0] for req in requirements}
 
-        # MLflow PyTorch flavor dependencies
-        expected_mlflow_pytorch = {"mlflow", "torch", "numpy"}
-        found_mlflow_pytorch = expected_mlflow_pytorch.intersection(package_names)
+        # MLflow PyTorch flavor dependencies (accept either mlflow or mlflow-skinny)
+        expected_mlflow_pytorch = {"torch", "numpy"}
+        expected_mlflow_variants = {"mlflow", "mlflow-skinny"}
 
-        # Expect all three key dependencies
+        found_mlflow_pytorch = expected_mlflow_pytorch.intersection(package_names)
+        found_mlflow_variants = expected_mlflow_variants.intersection(package_names)
+
+        # Expect torch, numpy, and one MLflow variant
         assert expected_mlflow_pytorch.issubset(
             found_mlflow_pytorch
-        ), f"Missing MLflow PyTorch deps: {expected_mlflow_pytorch - found_mlflow_pytorch}"
+        ), f"Missing core deps: {expected_mlflow_pytorch - found_mlflow_pytorch}"
+        assert len(found_mlflow_variants) >= 1, f"Missing MLflow variant: {found_mlflow_variants}"
 
     def test_mlflow_custom_flavor_dependencies(self, tmp_path):
         """Test MLflow custom flavor dependency detection."""
