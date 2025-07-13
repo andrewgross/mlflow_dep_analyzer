@@ -35,13 +35,13 @@ build: clean
 	uv build
 	@echo "Build complete!"
 
-publish:
+publish: build
 	@echo "Publishing package..."
 	uv publish
 	@echo "Publish complete!"
 
 
-clean: build
+clean: 
 	@echo "Cleaning up..."
 	rm -rf __pycache__/ .pytest_cache/
 	rm -rf category_indexer/
