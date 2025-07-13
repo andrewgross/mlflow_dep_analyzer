@@ -41,13 +41,17 @@ class TestComplexProjectAnalysis:
         assert "detailed_modules" in result
 
         # Check external dependencies are correctly identified
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Check that at least some key external dependencies are found
         # (not all may be imported depending on the specific analysis path)
-        key_deps = {"pandas", "numpy", "sklearn", "mlflow", "flask"}
-        found_key_deps = key_deps.intersection(requirements)
-        assert len(found_key_deps) >= 3, f"Expected key dependencies, found: {found_key_deps}"
+        key_deps = {"pandas", "numpy", "scikit-learn", "mlflow", "mlflow-skinny", "flask", "Flask"}
+        found_key_deps = key_deps.intersection(package_names)
+        assert (
+            len(found_key_deps) >= 3
+        ), f"Expected key dependencies, found: {found_key_deps}, all packages: {package_names}"
 
         # Verify no standard library modules in requirements
         stdlib_modules = {
@@ -62,7 +66,7 @@ class TestComplexProjectAnalysis:
             "asyncio",
             "collections",
         }
-        found_stdlib = stdlib_modules.intersection(requirements)
+        found_stdlib = stdlib_modules.intersection(package_names)
         assert len(found_stdlib) == 0, f"Found stdlib modules in requirements: {found_stdlib}"
 
         # Check code paths include local files
@@ -98,9 +102,10 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies from both modules
         requirements = result["requirements"]
-        assert "pandas" in requirements
-        assert "numpy" in requirements
-        assert "sklearn" in requirements
+        package_names = {req.split("==")[0] for req in requirements}
+        assert "pandas" in package_names
+        assert "numpy" in package_names
+        assert "scikit-learn" in package_names  # sklearn -> scikit-learn
 
         # Test three-way circular import (X -> Y -> Z -> X)
         module_x = circular_dir / "module_x.py"
@@ -113,8 +118,9 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies from all three modules
         requirements_3way = result_3way["requirements"]
-        external_deps = {"requests", "sklearn", "torch"}
-        found_deps = external_deps.intersection(requirements_3way)
+        package_names_3way = {req.split("==")[0] for req in requirements_3way}
+        external_deps = {"requests", "scikit-learn", "torch"}  # sklearn -> scikit-learn
+        found_deps = external_deps.intersection(package_names_3way)
         assert len(found_deps) >= 2, f"Expected multiple external deps, found: {found_deps}"
 
     def test_deep_relative_imports(self, problematic_imports):
@@ -129,13 +135,14 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies
         requirements = result["requirements"]
-        expected_deps = {"pandas", "numpy", "yaml", "requests"}
-        found_deps = expected_deps.intersection(requirements)
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_deps = {"pandas", "numpy", "PyYAML", "requests"}  # Note: yaml -> PyYAML
+        found_deps = expected_deps.intersection(package_names)
         assert len(found_deps) >= 2, f"Expected external deps from deep module, found: {found_deps}"
 
         # Should not include stdlib modules
         stdlib_not_expected = {"json", "datetime"}
-        found_stdlib = stdlib_not_expected.intersection(requirements)
+        found_stdlib = stdlib_not_expected.intersection(package_names)
         assert len(found_stdlib) == 0, f"Found unexpected stdlib modules: {found_stdlib}"
 
         # Should include all referenced local files despite deep nesting

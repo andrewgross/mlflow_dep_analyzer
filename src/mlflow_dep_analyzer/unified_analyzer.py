@@ -165,10 +165,12 @@ class UnifiedDependencyAnalyzer:
     def _build_import_to_package_mapping(self) -> dict[str, str]:
         """Build a mapping from import names to package names by scanning all distributions."""
         mapping = {}
+        conflicts = {}  # Track multiple packages providing the same import
 
         try:
             from importlib.metadata import distributions
 
+            # First pass: collect all mappings and track conflicts
             for dist in distributions():
                 dist_name = dist.metadata["Name"]
 
@@ -177,19 +179,75 @@ class UnifiedDependencyAnalyzer:
 
                 # Map each import to this distribution
                 for import_name in top_level_imports:
-                    # Use the first match (in case of conflicts, first wins)
-                    if import_name not in mapping:
-                        mapping[import_name] = dist_name
+                    if import_name not in conflicts:
+                        conflicts[import_name] = []
+                    conflicts[import_name].append(dist_name)
 
                 # Also map the package name to itself (for cases like 'requests' -> 'requests')
                 normalized_dist_name = dist_name.lower().replace("-", "_").replace(".", "_")
-                if normalized_dist_name not in mapping:
-                    mapping[normalized_dist_name] = dist_name
+                if normalized_dist_name not in conflicts:
+                    conflicts[normalized_dist_name] = []
+                conflicts[normalized_dist_name].append(dist_name)
+
+            # Second pass: resolve conflicts using priority rules
+            for import_name, candidates in conflicts.items():
+                if len(candidates) == 1:
+                    mapping[import_name] = candidates[0]
+                else:
+                    # Multiple candidates - choose the best one
+                    mapping[import_name] = self._resolve_package_conflict(import_name, candidates)
 
         except Exception:
             pass
 
         return mapping
+
+    def _resolve_package_conflict(self, import_name: str, candidates: list[str]) -> str:
+        """Resolve conflicts by determining which package would actually be imported."""
+        try:
+            # Try using packages_distributions() first - this is most reliable
+            try:
+                import importlib.metadata
+
+                pkg_to_dist = importlib.metadata.packages_distributions()
+                if import_name in pkg_to_dist:
+                    # Get all distributions that provide this import
+                    providing_dists = pkg_to_dist[import_name]
+                    # Return the first one that's in our candidates list
+                    for dist_name in providing_dists:
+                        if dist_name in candidates:
+                            return dist_name
+            except Exception:
+                pass
+
+            # Fallback: check which package Python would actually import from
+            import importlib.util
+
+            spec = importlib.util.find_spec(import_name)
+            if spec and (spec.submodule_search_locations or spec.origin):
+                # Check which candidate distribution has the most files for this import
+                best_match = None
+                best_count = 0
+
+                for candidate in candidates:
+                    try:
+                        dist = importlib.metadata.distribution(candidate)
+                        if dist.files:
+                            count = sum(1 for f in dist.files if f.parts and f.parts[0] == import_name)
+                            if count > best_count:
+                                best_count = count
+                                best_match = candidate
+                    except Exception:
+                        continue
+
+                if best_match:
+                    return best_match
+
+            # Final fallback: return first candidate
+            return candidates[0]
+
+        except Exception:
+            return candidates[0]
 
     def _get_top_level_imports_for_dist(self, dist) -> set[str]:
         """Get the top-level import names provided by a distribution."""
@@ -637,62 +695,9 @@ class UnifiedDependencyAnalyzer:
         return stdlib_modules
 
     def _get_stdlib_module_names(self) -> set[str]:
-        """Get Python standard library module names using sys.stdlib_module_names (Python 3.10+)."""
-        try:
-            # Use sys.stdlib_module_names if available (Python 3.10+)
-            if hasattr(sys, "stdlib_module_names"):
-                return set(sys.stdlib_module_names)
-        except Exception:
-            pass
-
-        # Fallback for older Python versions - use a minimal essential set
-        return {
-            "os",
-            "sys",
-            "json",
-            "urllib",
-            "http",
-            "pathlib",
-            "collections",
-            "itertools",
-            "functools",
-            "operator",
-            "typing",
-            "datetime",
-            "time",
-            "random",
-            "math",
-            "re",
-            "string",
-            "io",
-            "pickle",
-            "csv",
-            "logging",
-            "threading",
-            "subprocess",
-            "shutil",
-            "tempfile",
-            "glob",
-            "hashlib",
-            "uuid",
-            "base64",
-            "struct",
-            "codecs",
-            "argparse",
-            "copy",
-            "enum",
-            "contextlib",
-            "abc",
-            "traceback",
-            "warnings",
-            "inspect",
-            "importlib",
-            "ast",
-            "platform",
-            "socket",
-            "asyncio",
-            "signal",
-        }
+        """Get Python standard library module names (Python 3.11+ has sys.stdlib_module_names)."""
+        # Python 3.11+ always has sys.stdlib_module_names
+        return set(sys.stdlib_module_names)
 
     def _is_likely_stdlib(self, module) -> bool:
         """Check if a module is likely from the standard library."""

@@ -34,7 +34,9 @@ class TestMLFrameworkDependencies:
         assert "requirements" in result
         assert "code_paths" in result
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Core TensorFlow ecosystem
         expected_tf_deps = {
@@ -56,12 +58,12 @@ class TestMLFrameworkDependencies:
 
         # Check key dependencies are found
         key_deps = expected_tf_deps | expected_sci_deps | expected_mlflow_deps
-        found_key_deps = key_deps.intersection(requirements)
+        found_key_deps = key_deps.intersection(package_names)
         assert len(found_key_deps) >= 8, f"Expected TensorFlow deps, found: {found_key_deps}"
 
         # Should not include stdlib modules
         stdlib_modules = {"os", "sys", "json", "time", "pathlib", "logging"}
-        found_stdlib = stdlib_modules.intersection(requirements)
+        found_stdlib = stdlib_modules.intersection(package_names)
         assert len(found_stdlib) == 0, f"Found stdlib modules: {found_stdlib}"
 
     def test_pytorch_project_dependencies(self, ml_frameworks):
@@ -72,7 +74,9 @@ class TestMLFrameworkDependencies:
 
         result = analyzer.analyze_dependencies([str(train_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Core PyTorch ecosystem
         expected_torch_deps = {
@@ -88,10 +92,13 @@ class TestMLFrameworkDependencies:
         # Data processing
         expected_data_deps = {"albumentations", "numpy", "pandas"}
 
-        # Check key dependencies
-        key_deps = expected_torch_deps | expected_data_deps
-        found_key_deps = key_deps.intersection(requirements)
-        assert len(found_key_deps) >= 6, f"Expected PyTorch deps, found: {found_key_deps}"
+        # Check key dependencies by category
+        found_torch_deps = expected_torch_deps.intersection(package_names)
+        found_data_deps = expected_data_deps.intersection(package_names)
+
+        # Expect at least some PyTorch deps and some data processing deps
+        assert len(found_torch_deps) >= 3, f"Expected PyTorch deps, found: {found_torch_deps}"
+        assert len(found_data_deps) >= 2, f"Expected data deps, found: {found_data_deps}"
 
     def test_huggingface_project_dependencies(self, ml_frameworks):
         """Test Hugging Face Transformers project dependency detection."""
@@ -101,7 +108,9 @@ class TestMLFrameworkDependencies:
 
         result = analyzer.analyze_dependencies([str(train_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Core transformers ecosystem
         expected_hf_deps = {
@@ -121,7 +130,7 @@ class TestMLFrameworkDependencies:
 
         # Check key dependencies
         key_deps = expected_hf_deps | expected_support_deps
-        found_key_deps = key_deps.intersection(requirements)
+        found_key_deps = key_deps.intersection(package_names)
         assert len(found_key_deps) >= 8, f"Expected HuggingFace deps, found: {found_key_deps}"
 
     def test_scientific_computing_project_dependencies(self, ml_frameworks):
@@ -132,7 +141,9 @@ class TestMLFrameworkDependencies:
 
         result = analyzer.analyze_dependencies([str(analysis_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Core scientific stack
         expected_sci_deps = {
@@ -163,7 +174,7 @@ class TestMLFrameworkDependencies:
 
         # Check comprehensive scientific ecosystem
         key_deps = expected_sci_deps | expected_advanced_deps
-        found_key_deps = key_deps.intersection(requirements)
+        found_key_deps = key_deps.intersection(package_names)
         assert len(found_key_deps) >= 15, f"Expected scientific deps, found: {found_key_deps}"
 
 
@@ -183,7 +194,9 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(func_imports_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # These imports are INSIDE functions and should be detected
         # This test currently FAILS because AST analysis doesn't detect
@@ -191,7 +204,7 @@ class TestLazyImportDetection:
         expected_lazy_imports = {
             "pandas",
             "numpy",
-            "sklearn",
+            "scikit-learn",
             "torch",
             "tensorflow",
             "matplotlib",
@@ -204,7 +217,7 @@ class TestLazyImportDetection:
             "catboost",
         }
 
-        found_lazy_imports = expected_lazy_imports.intersection(requirements)
+        found_lazy_imports = expected_lazy_imports.intersection(package_names)
 
         # This assertion will fail with current implementation
         # demonstrating the critical gap in lazy import detection
@@ -220,7 +233,9 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(conditional_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Conditional imports that should be detected
         expected_conditional = {
@@ -235,7 +250,7 @@ class TestLazyImportDetection:
             "pika",
         }
 
-        found_conditional = expected_conditional.intersection(requirements)
+        found_conditional = expected_conditional.intersection(package_names)
 
         # This test shows limited conditional import detection
         assert len(found_conditional) >= 3, f"Limited conditional import detection. Found: {found_conditional}"
@@ -248,11 +263,13 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(class_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Method-level imports
         expected_method_imports = {
-            "sklearn",
+            "scikit-learn",
             "torch",
             "transformers",
             "pandas",
@@ -263,7 +280,7 @@ class TestLazyImportDetection:
             "altair",
         }
 
-        found_method_imports = expected_method_imports.intersection(requirements)
+        found_method_imports = expected_method_imports.intersection(package_names)
 
         # Another critical gap - method-level imports not detected
         assert len(found_method_imports) >= 4, f"Method-level imports not fully detected. Found: {found_method_imports}"
@@ -276,13 +293,15 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(property_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Property-level imports
         expected_property_imports = {
             "pandas",
             "numpy",
-            "sklearn",
+            "scikit-learn",
             "torch",
             "tensorflow",
             "matplotlib",
@@ -292,7 +311,7 @@ class TestLazyImportDetection:
             "dask",
         }
 
-        found_property_imports = expected_property_imports.intersection(requirements)
+        found_property_imports = expected_property_imports.intersection(package_names)
 
         # Property imports are also not detected by current AST analysis
         assert len(found_property_imports) >= 3, f"Property-level imports not detected. Found: {found_property_imports}"
@@ -305,13 +324,15 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(decorator_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Decorator-level imports
         expected_decorator_imports = {
             "pandas",
             "numpy",
-            "sklearn",
+            "scikit-learn",
             "torch",
             "tensorflow",
             "redis",
@@ -321,7 +342,7 @@ class TestLazyImportDetection:
             "cerberus",
         }
 
-        found_decorator_imports = expected_decorator_imports.intersection(requirements)
+        found_decorator_imports = expected_decorator_imports.intersection(package_names)
 
         # Decorator imports also not fully detected
         assert (
@@ -336,16 +357,18 @@ class TestLazyImportDetection:
 
         result = analyzer.analyze_dependencies([str(runtime_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Runtime imports are nearly impossible to detect statically
         # but we should at least find importlib usage
         assert "importlib" not in requirements, "importlib is stdlib and should be filtered"
 
         # Some imports might still be detectable
-        possible_runtime_imports = {"sklearn", "torch", "tensorflow", "pandas", "numpy"}
+        possible_runtime_imports = {"scikit-learn", "torch", "tensorflow", "pandas", "numpy"}
 
-        found_runtime = possible_runtime_imports.intersection(requirements)
+        found_runtime = possible_runtime_imports.intersection(package_names)
 
         # Runtime imports are the hardest to detect statically
         # This demonstrates the fundamental limitation of static analysis
@@ -417,13 +440,16 @@ def load_and_serve_model(model_uri: str):
 
         result = analyzer.analyze_dependencies([str(mlflow_sklearn_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # MLflow sklearn flavor dependencies
-        expected_mlflow_sklearn = {"mlflow", "sklearn", "pandas", "numpy"}
-        found_mlflow_sklearn = expected_mlflow_sklearn.intersection(requirements)
+        expected_mlflow_sklearn = {"mlflow", "scikit-learn", "pandas", "numpy"}
+        found_mlflow_sklearn = expected_mlflow_sklearn.intersection(package_names)
+        not_found_mlflow_sklearn = expected_mlflow_sklearn.difference(package_names)
 
-        assert len(found_mlflow_sklearn) >= 3, f"MLflow sklearn flavor deps not found: {found_mlflow_sklearn}"
+        assert len(found_mlflow_sklearn) >= 3, f"MLflow sklearn flavor deps not found: {not_found_mlflow_sklearn}"
 
     def test_mlflow_pytorch_flavor_dependencies(self, tmp_path):
         """Test MLflow PyTorch flavor dependency detection."""
@@ -486,13 +512,18 @@ def train_and_log_pytorch_model():
 
         result = analyzer.analyze_dependencies([str(mlflow_pytorch_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # MLflow PyTorch flavor dependencies
         expected_mlflow_pytorch = {"mlflow", "torch", "numpy"}
-        found_mlflow_pytorch = expected_mlflow_pytorch.intersection(requirements)
+        found_mlflow_pytorch = expected_mlflow_pytorch.intersection(package_names)
 
-        assert len(found_mlflow_pytorch) >= 3, f"MLflow PyTorch flavor deps not found: {found_mlflow_pytorch}"
+        # Expect all three key dependencies
+        assert expected_mlflow_pytorch.issubset(
+            found_mlflow_pytorch
+        ), f"Missing MLflow PyTorch deps: {expected_mlflow_pytorch - found_mlflow_pytorch}"
 
     def test_mlflow_custom_flavor_dependencies(self, tmp_path):
         """Test MLflow custom flavor dependency detection."""
@@ -563,11 +594,13 @@ def create_custom_flavor():
 
         result = analyzer.analyze_dependencies([str(custom_flavor_file)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Custom flavor dependencies
-        expected_custom = {"mlflow", "joblib", "pandas", "numpy", "sklearn"}
-        found_custom = expected_custom.intersection(requirements)
+        expected_custom = {"mlflow", "joblib", "pandas", "numpy", "scikit-learn"}
+        found_custom = expected_custom.intersection(package_names)
 
         assert len(found_custom) >= 4, f"MLflow custom flavor deps not found: {found_custom}"
 
@@ -639,9 +672,11 @@ def train_model():
 
         result = analyzer.analyze_dependencies([str(main_file)])
 
-        requirements = set(result["requirements"])
-        expected_deps = {"pandas", "numpy", "sklearn", "mlflow"}
-        found_deps = expected_deps.intersection(requirements)
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_deps = {"pandas", "numpy", "scikit-learn", "mlflow"}
+        found_deps = expected_deps.intersection(package_names)
 
         assert len(found_deps) >= 3, f"Poetry project deps not found: {found_deps}"
 
@@ -738,11 +773,13 @@ class ModelTrainer:
 
         result = analyzer.analyze_dependencies([str(data_main), str(model_main)])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Should find dependencies from both packages
-        expected_deps = {"pandas", "numpy", "sklearn", "dask", "torch", "mlflow"}
-        found_deps = expected_deps.intersection(requirements)
+        expected_deps = {"pandas", "numpy", "scikit-learn", "dask", "torch", "mlflow"}
+        found_deps = expected_deps.intersection(package_names)
 
         assert len(found_deps) >= 5, f"Monorepo deps not found: {found_deps}"
 
@@ -816,7 +853,7 @@ import requests
 import json
 import yaml
 from pathlib import Path
-from module_{max(0, i-1)} import process_data
+from module_{max(0, i - 1)} import process_data
 
 def load_config():
     config = {{"module_id": {i}}}
@@ -835,11 +872,13 @@ def load_config():
         assert analysis_time < 30.0, f"Analysis too slow: {analysis_time:.2f}s"
 
         # Should find comprehensive dependencies
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
         expected_large_deps = {
             "pandas",
             "numpy",
-            "sklearn",
+            "scikit-learn",
             "mlflow",
             "torch",
             "transformers",
@@ -851,7 +890,7 @@ def load_config():
             "yaml",
         }
 
-        found_large_deps = expected_large_deps.intersection(requirements)
+        found_large_deps = expected_large_deps.intersection(package_names)
         assert len(found_large_deps) >= 8, f"Large codebase deps: {found_large_deps}"
 
     def test_deep_import_chains(self, tmp_path):
@@ -893,7 +932,7 @@ def terminal_function(data):
                 content = f"""
 import requests
 import yaml
-from chain_{i+1} import next_function
+from chain_{i + 1} import next_function
 
 def intermediate_function_{i}(data):
     config = yaml.safe_load("{{test: true}}")
@@ -909,12 +948,14 @@ next_function = intermediate_function_{i}
         # Analyze the root module (should follow entire chain)
         result = analyzer.analyze_dependencies([files_created[0]])
 
-        requirements = set(result["requirements"])
+        requirements = result["requirements"]
+        # Extract package names from versioned requirements
+        package_names = {req.split("==")[0] for req in requirements}
 
         # Should find dependencies from entire chain
-        expected_chain_deps = {"pandas", "numpy", "sklearn", "matplotlib", "requests", "yaml"}
+        expected_chain_deps = {"pandas", "numpy", "scikit-learn", "matplotlib", "requests", "yaml"}
 
-        found_chain_deps = expected_chain_deps.intersection(requirements)
+        found_chain_deps = expected_chain_deps.intersection(package_names)
         assert len(found_chain_deps) >= 4, f"Deep chain deps: {found_chain_deps}"
 
         # Should include multiple chain files
@@ -1099,7 +1140,7 @@ def deploy_model(deployment_target: str, model_uri: str):
 
     # Should detect comprehensive ML ecosystem despite lazy imports
     comprehensive_deps = {
-        "sklearn",
+        "scikit-learn",
         "pandas",
         "numpy",
         "torch",
