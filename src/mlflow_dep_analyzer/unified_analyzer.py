@@ -20,6 +20,12 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    from importlib.metadata import PackageNotFoundError, version
+except ImportError:
+    # Fallback for Python < 3.8
+    from importlib_metadata import PackageNotFoundError, version  # type: ignore
+
 
 class DependencyType:
     """Enumeration of dependency types."""
@@ -121,6 +127,24 @@ class UnifiedDependencyAnalyzer:
             return package_name
         return None
 
+    def _get_package_version(self, package_name: str) -> str | None:
+        """Get the version of an installed package."""
+        try:
+            return version(package_name)
+        except PackageNotFoundError:
+            return None
+        except Exception:
+            # Handle any other unexpected errors
+            return None
+
+    def _format_requirement_with_version(self, package_name: str) -> str:
+        """Format a package requirement with version if available."""
+        package_version = self._get_package_version(package_name)
+        if package_version:
+            return f"{package_name}=={package_version}"
+        else:
+            return package_name
+
     def _convert_to_relative_paths(self, local_files: set[str]) -> list[str]:
         """Convert absolute file paths to relative paths for MLflow."""
         relative_code_paths = []
@@ -142,8 +166,11 @@ class UnifiedDependencyAnalyzer:
         relative_code_paths: list[str],
     ) -> dict:
         """Build the final analysis result dictionary."""
+        # Format requirements with versions
+        versioned_requirements = [self._format_requirement_with_version(pkg) for pkg in external_packages]
+
         return {
-            "requirements": sorted(external_packages),
+            "requirements": sorted(versioned_requirements),
             "code_paths": sorted(relative_code_paths),
             "analysis": {
                 "total_modules": len(all_modules),
@@ -666,3 +693,29 @@ def get_model_code_paths(model_file: str, repo_root: str | None = None) -> list[
     """Get just the code paths for a model file."""
     result = analyze_model_dependencies(model_file, repo_root)
     return result["code_paths"]
+
+
+def get_mlflow_dependencies(model_file: str, repo_root: str | None = None) -> dict:
+    """
+    Get dependencies in a format ready for MLflow logging.
+
+    Args:
+        model_file: Path to the main model Python file
+        repo_root: Root directory of the repository (auto-detected if None)
+
+    Returns:
+        Dictionary with 'requirements' (list of versioned requirements) and
+        'code_paths' (list of relative paths) that can be directly used with
+        mlflow.log_model() or mlflow.save_model()
+
+    Example:
+        deps = get_mlflow_dependencies("model.py")
+        mlflow.sklearn.log_model(
+            model,
+            "my_model",
+            pip_requirements=deps["requirements"],
+            code_paths=deps["code_paths"]
+        )
+    """
+    result = analyze_model_dependencies(model_file, repo_root)
+    return {"requirements": result["requirements"], "code_paths": result["code_paths"]}

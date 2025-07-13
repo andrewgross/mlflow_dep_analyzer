@@ -16,6 +16,11 @@ from mlflow_dep_analyzer.unified_analyzer import (
 )
 
 
+def _has_package_requirement(requirements, package_name):
+    """Helper function to check if a package is in requirements list (handles versioned requirements)."""
+    return any(req.split("==")[0] == package_name for req in requirements)
+
+
 @pytest.fixture(autouse=True)
 def clean_imports():
     """Clean up import state between tests to prevent interference."""
@@ -101,11 +106,11 @@ def helper(data):
         assert "analysis" in result
 
         # Check that pandas is in requirements (external package)
-        assert "pandas" in result["requirements"]
+        assert _has_package_requirement(result["requirements"], "pandas")
 
         # Check that os and json are NOT in requirements (stdlib)
-        assert "os" not in result["requirements"]
-        assert "json" not in result["requirements"]
+        assert not _has_package_requirement(result["requirements"], "os")
+        assert not _has_package_requirement(result["requirements"], "json")
 
         # Check that local files are in code paths
         code_paths = result["code_paths"]
@@ -165,11 +170,11 @@ def load_data():
 
         # Check external packages
         requirements = result["requirements"]
-        assert "numpy" in requirements
-        assert "sklearn" in requirements
+        assert _has_package_requirement(requirements, "numpy")
+        assert _has_package_requirement(requirements, "sklearn")
 
         # Check that stdlib is not in requirements
-        assert "pathlib" not in requirements
+        assert not _has_package_requirement(requirements, "pathlib")
 
         # Check code paths include all local files
         code_paths = result["code_paths"]
@@ -213,10 +218,10 @@ class Engine:
         result = analyzer.analyze_dependencies([str(model_file)])
 
         # Check external package
-        assert "requests" in result["requirements"]
+        assert _has_package_requirement(result["requirements"], "requests")
 
         # Check stdlib not included
-        assert "datetime" not in result["requirements"]
+        assert not _has_package_requirement(result["requirements"], "datetime")
 
         # Check code paths (should be relative to repo root, not src/)
         code_paths = result["code_paths"]
@@ -330,8 +335,8 @@ def train():
         result = analyzer.analyze_dependencies([str(model_file)])
 
         # Missing packages should be treated as external
-        assert "nonexistent_package" in result["requirements"]
-        assert "missing_local_module" in result["requirements"]
+        assert _has_package_requirement(result["requirements"], "nonexistent_package")
+        assert _has_package_requirement(result["requirements"], "missing_local_module")
 
     def test_module_classification(self, tmp_path):
         """Test accurate classification of different module types."""
@@ -388,9 +393,9 @@ def process2():
 
         # Should include packages from both entry files
         requirements = result["requirements"]
-        assert "requests" in requirements  # from shared
-        assert "pandas" in requirements  # from entry1
-        assert "numpy" in requirements  # from entry2
+        assert _has_package_requirement(requirements, "requests")  # from shared
+        assert _has_package_requirement(requirements, "pandas")  # from entry1
+        assert _has_package_requirement(requirements, "numpy")  # from entry2
 
         # Should include all local files (no duplicates)
         code_paths = result["code_paths"]
@@ -419,13 +424,13 @@ def train():
     result = analyze_model_dependencies(str(model_file), str(tmp_path))
     assert "requirements" in result
     assert "code_paths" in result
-    assert "pandas" in result["requirements"]
-    assert "os" not in result["requirements"]
+    assert _has_package_requirement(result["requirements"], "pandas")
+    assert not _has_package_requirement(result["requirements"], "os")
 
     # Test get_model_requirements
     requirements = get_model_requirements(str(model_file), str(tmp_path))
     assert isinstance(requirements, list)
-    assert "pandas" in requirements
+    assert _has_package_requirement(requirements, "pandas")
 
     # Test get_model_code_paths
     code_paths = get_model_code_paths(str(model_file), str(tmp_path))
@@ -508,12 +513,14 @@ def calculate_accuracy(model, data):
 
     # Check external packages are correctly identified
     requirements = result["requirements"]
+    # Extract package names from versioned requirements
+    package_names = {req.split("==")[0] for req in requirements}
     expected_packages = {"pandas", "numpy", "sklearn"}
-    assert expected_packages.issubset(set(requirements))
+    assert expected_packages.issubset(package_names)
 
     # Check stdlib modules are NOT in requirements
     stdlib_modules = {"logging", "json", "datetime", "math"}
-    assert stdlib_modules.isdisjoint(set(requirements))
+    assert stdlib_modules.isdisjoint(package_names)
 
     # Check all local files are included
     code_paths = result["code_paths"]

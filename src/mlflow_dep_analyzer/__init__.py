@@ -16,6 +16,7 @@ Example:
 from .unified_analyzer import (
     UnifiedDependencyAnalyzer,
     analyze_model_dependencies,
+    get_mlflow_dependencies,
     get_model_code_paths,
     get_model_requirements,
 )
@@ -27,4 +28,5 @@ __all__ = [
     "analyze_model_dependencies",
     "get_model_requirements",
     "get_model_code_paths",
+    "get_mlflow_dependencies",
 ]
