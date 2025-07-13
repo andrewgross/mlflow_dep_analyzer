@@ -30,7 +30,7 @@ format:
 	uv run pre-commit run --all-files
 
 
-build:
+build: clean
 	@echo "Building package..."
 	uv build
 	@echo "Build complete!"
@@ -41,7 +41,7 @@ publish:
 	@echo "Publish complete!"
 
 
-clean:
+clean: build
 	@echo "Cleaning up..."
 	rm -rf __pycache__/ .pytest_cache/
 	rm -rf category_indexer/
