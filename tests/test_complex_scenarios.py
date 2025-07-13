@@ -168,8 +168,9 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies used in dynamic imports
         requirements = result["requirements"]
-        expected_deps = {"pandas", "numpy", "yaml"}
-        found_deps = expected_deps.intersection(requirements)
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_deps = {"pandas", "numpy", "PyYAML"}  # yaml -> PyYAML
+        found_deps = expected_deps.intersection(package_names)
         assert len(found_deps) >= 2, f"Expected deps from dynamic imports, found: {found_deps}"
 
         # Should handle missing/dynamic modules gracefully
@@ -212,8 +213,9 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies
         requirements = result["requirements"]
+        package_names = {req.split("==")[0] for req in requirements}
         expected_deps = {"pandas", "numpy"}
-        found_deps = expected_deps.intersection(requirements)
+        found_deps = expected_deps.intersection(package_names)
         assert len(found_deps) >= 1, f"Expected deps from namespace package, found: {found_deps}"
 
         # Should include namespace package files
@@ -236,8 +238,9 @@ class TestComplexProjectAnalysis:
         # Note: May not find all since they're conditional, but should find some
 
         # Should always find basic external dependencies
+        package_names = {req.split("==")[0] for req in requirements}
         basic_deps = {"pandas", "numpy"}  # These are imported unconditionally
-        found_basic = basic_deps.intersection(requirements)
+        found_basic = basic_deps.intersection(package_names)
         assert len(found_basic) >= 1, f"Expected basic deps, found: {found_basic}"
 
     def test_star_imports_resolution(self, problematic_imports):
@@ -251,8 +254,9 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies from star-imported modules
         requirements = result["requirements"]
-        expected_deps = {"pandas", "numpy", "sklearn"}
-        found_deps = expected_deps.intersection(requirements)
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_deps = {"pandas", "numpy", "scikit-learn"}  # sklearn -> scikit-learn
+        found_deps = expected_deps.intersection(package_names)
         assert len(found_deps) >= 2, f"Expected deps from star imports, found: {found_deps}"
 
         # Should include the base module that's star-imported
@@ -261,7 +265,7 @@ class TestComplexProjectAnalysis:
 
         # Should not include stdlib modules from star imports
         stdlib_modules = {"collections", "itertools"}
-        found_stdlib = stdlib_modules.intersection(requirements)
+        found_stdlib = stdlib_modules.intersection(package_names)
         assert len(found_stdlib) == 0, f"Found stdlib modules from star imports: {found_stdlib}"
 
     def test_plugin_system_analysis(self, problematic_imports):
@@ -275,8 +279,9 @@ class TestComplexProjectAnalysis:
 
         # Should find external dependencies from plugin manager
         requirements = result["requirements"]
-        expected_deps = {"yaml", "pandas"}
-        found_deps = expected_deps.intersection(requirements)
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_deps = {"PyYAML", "pandas"}  # yaml -> PyYAML
+        found_deps = expected_deps.intersection(package_names)
         assert len(found_deps) >= 1, f"Expected deps from plugin system, found: {found_deps}"
 
         # Test individual plugin analysis
@@ -284,8 +289,9 @@ class TestComplexProjectAnalysis:
         plugin_result = analyzer.analyze_dependencies([str(plugin_file)])
 
         plugin_requirements = plugin_result["requirements"]
+        plugin_package_names = {req.split("==")[0] for req in plugin_requirements}
         plugin_deps = {"pandas", "numpy"}
-        found_plugin_deps = plugin_deps.intersection(plugin_requirements)
+        found_plugin_deps = plugin_deps.intersection(plugin_package_names)
         assert len(found_plugin_deps) >= 1, f"Expected deps from plugin, found: {found_plugin_deps}"
 
     def test_multiple_entry_points_complex(self, complex_project):
@@ -310,8 +316,15 @@ class TestComplexProjectAnalysis:
         requirements = result["requirements"]
 
         # Should include major external dependencies from all entry points
-        major_deps = {"pandas", "numpy", "sklearn", "mlflow"}
-        found_major = major_deps.intersection(requirements)
+        package_names = {req.split("==")[0] for req in requirements}
+        major_deps = {
+            "pandas",
+            "numpy",
+            "scikit-learn",
+            "mlflow",
+            "mlflow-skinny",
+        }  # sklearn -> scikit-learn, handle mlflow variants
+        found_major = major_deps.intersection(package_names)
         assert len(found_major) >= 3, f"Expected major deps from multiple entry points, found: {found_major}"
 
         # Should include many local files
@@ -709,14 +722,23 @@ def load_config(config_path):
         result = analyzer.analyze_dependencies([str(main_file)])
 
         # Should find all major ML dependencies
-        requirements = set(result["requirements"])
-        expected_ml_deps = {"pandas", "numpy", "sklearn", "mlflow", "joblib", "yaml"}
-        found_ml_deps = expected_ml_deps.intersection(requirements)
+        requirements = result["requirements"]
+        package_names = {req.split("==")[0] for req in requirements}
+        expected_ml_deps = {
+            "pandas",
+            "numpy",
+            "scikit-learn",
+            "mlflow",
+            "mlflow-skinny",
+            "joblib",
+            "PyYAML",
+        }  # sklearn -> scikit-learn, yaml -> PyYAML
+        found_ml_deps = expected_ml_deps.intersection(package_names)
         assert len(found_ml_deps) >= 5, f"Expected ML dependencies, found: {found_ml_deps}"
 
         # Should not include stdlib modules
         stdlib_modules = {"pathlib", "logging"}
-        found_stdlib = stdlib_modules.intersection(requirements)
+        found_stdlib = stdlib_modules.intersection(package_names)
         assert len(found_stdlib) == 0, f"Found stdlib modules: {found_stdlib}"
 
         # Should include all local modules

@@ -684,10 +684,15 @@ class UnifiedDependencyAnalyzer:
             if stdlib_path:
                 stdlib_dir = Path(stdlib_path)
                 if stdlib_dir.exists():
+                    # Add .py files as modules
                     for py_file in stdlib_dir.glob("*.py"):
                         stdlib_modules.add(py_file.stem)
+
+                    # Add directories as packages (both regular and namespace)
                     for pkg_dir in stdlib_dir.iterdir():
-                        if pkg_dir.is_dir() and (pkg_dir / "__init__.py").exists():
+                        if pkg_dir.is_dir() and not pkg_dir.name.startswith("."):
+                            # Include all directories that could be packages
+                            # (Python's import system handles regular vs namespace packages)
                             stdlib_modules.add(pkg_dir.name)
         except Exception:
             pass
@@ -725,11 +730,69 @@ class UnifiedDependencyAnalyzer:
         return self._find_local_module_path(module_name) is not None
 
     def _find_local_module_path(self, module_name: str) -> str | None:
-        """Find the file path for a local module by searching the repo."""
-        # Convert module name to potential file paths
+        """Find the file path for a local module using Python's import machinery."""
+        try:
+            # First, try using Python's import resolution with temporary sys.path modification
+            import importlib.util
+            import sys
+            from pathlib import Path
+
+            # Add potential search locations to sys.path temporarily
+            search_locations = [
+                str(self.repo_root),
+                str(self.repo_root / "src"),
+                str(self.repo_root / "lib"),
+                str(self.repo_root / "packages"),
+            ]
+
+            # Store original sys.path
+            original_path = sys.path[:]
+
+            try:
+                # Add our search locations to the front of sys.path
+                for location in reversed(search_locations):
+                    if Path(location).exists() and location not in sys.path:
+                        sys.path.insert(0, location)
+
+                # Use Python's import machinery to find the module
+                spec = importlib.util.find_spec(module_name)
+
+                if spec and spec.origin:
+                    # Found a module file
+                    module_path = Path(spec.origin)
+                    # Only return if it's within our repository
+                    if self._is_file_in_repo(module_path):
+                        return str(module_path)
+
+                elif spec and spec.submodule_search_locations:
+                    # Found a package (could be regular or namespace)
+                    for location in spec.submodule_search_locations:
+                        location_path = Path(location)
+                        if self._is_file_in_repo(location_path):
+                            # For packages, return the directory path
+                            # Check if it has __init__.py (regular package)
+                            init_file = location_path / "__init__.py"
+                            if init_file.exists():
+                                return str(init_file)
+                            else:
+                                # Namespace package - return the directory
+                                return str(location_path)
+
+            finally:
+                # Restore original sys.path
+                sys.path[:] = original_path
+
+        except Exception:
+            # Fall back to manual search if importlib fails
+            pass
+
+        # Fallback: manual file system search
+        return self._manual_module_search(module_name)
+
+    def _manual_module_search(self, module_name: str) -> str | None:
+        """Manual fallback search for modules."""
         module_path = module_name.replace(".", "/")
 
-        # Search in common Python project directory patterns
         search_locations = [
             self.repo_root,
             self.repo_root / "src",
@@ -746,11 +809,17 @@ class UnifiedDependencyAnalyzer:
             if module_file.exists():
                 return str(module_file)
 
-            # Try as a package (directory with __init__.py)
+            # Try as a package directory (regular or namespace)
             package_dir = base_dir / module_path
-            package_init = package_dir / "__init__.py"
-            if package_init.exists():
-                return str(package_init)
+            if package_dir.is_dir():
+                # Check for regular package first
+                package_init = package_dir / "__init__.py"
+                if package_init.exists():
+                    return str(package_init)
+
+                # Check if it's a namespace package (has .py files but no __init__.py)
+                if any(package_dir.glob("*.py")):
+                    return str(package_dir)
 
         return None
 
